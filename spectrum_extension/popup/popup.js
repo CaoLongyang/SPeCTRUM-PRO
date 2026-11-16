@@ -2045,6 +2045,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   let hiddenAssignmentDetails = {}; // id -> { id, courseCode, courseName, title, dueDateStr, dateHidden }
   let activePinSession = null;
 
+  // Edge case helper: if a deadline is set to exactly 00:00 (midnight), in student practice it belongs to 23:59 of the day before
+  function normalizeMidnightDeadline(d) {
+    if (!d || isNaN(d.getTime())) return d;
+    if (d.getHours() === 0 && d.getMinutes() === 0) {
+      return new Date(d.getTime() - 60 * 1000); // 23:59:00 of day before
+    }
+    return d;
+  }
+
   function extractAssignmentCmid(str) {
     if (!str) return '';
     const s = String(str).trim();
@@ -3939,6 +3948,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         d = resolveAssignmentDate(assign);
       }
     }
+    if (d && !isNaN(d.getTime()) && typeof normalizeMidnightDeadline === 'function') {
+      d = normalizeMidnightDeadline(d);
+    }
 
     const now = new Date();
     const hasValidDate = Boolean(d && !isNaN(d.getTime()));
@@ -3989,20 +4001,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       const diffHours = Math.round(diffMs / (1000 * 60 * 60));
       const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-      if (diffHours <= 2) {
-        tokenText = t('cards', 'dueInHours', { h: Math.max(1, diffHours) });
+      if (diffMs <= 0) {
+        tokenText = t('cards', 'overdueToday');
         dotClass = 'dot-overdue';
         tokenClass = 'token-overdue';
+        btnClass = 'btn-assign-overdue';
+        btnText = t('cards', 'submitLate');
+      } else if (diffMs < 60 * 60 * 1000) {
+        const mins = Math.max(1, Math.round(diffMs / (1000 * 60)));
+        tokenText = t('cards', 'leftMin', { m: mins });
+        dotClass = 'dot-overdue';
+        tokenClass = 'token-overdue';
+        btnText = t('cards', 'submit');
       } else if (diffHours <= 24) {
-        tokenText = t('cards', 'dueToday');
+        const h = Math.max(1, diffHours);
+        tokenText = t('cards', 'dueInHours', { h });
         dotClass = 'dot-overdue';
         tokenClass = 'token-overdue';
-      } else if (diffDays === 1) {
+        btnText = t('cards', 'submit');
+      } else if (diffDays === 1 || diffHours <= 36) {
         tokenText = t('cards', 'dueTomorrow');
+        btnText = t('cards', 'submit');
       } else {
         tokenText = t('cards', 'dueInDays', { d: diffDays });
+        btnText = t('cards', 'submit');
       }
-      btnText = t('cards', 'submit');
     }
 
     // Format timestamp (e.g., "Wed 28 Oct, 23:00" or Chinese "10月28日 23:00")
@@ -7644,41 +7667,48 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Universal Assignment Due Date Resolver: checks dueDate, dueDateStr, and relative timeRemaining
   function resolveAssignmentDate(assign, now = new Date()) {
     if (!assign) return null;
+    let d = null;
     // 1. Direct valid Date object
     if (assign.dueDate instanceof Date && !isNaN(assign.dueDate.getTime()) && assign.dueDate.getFullYear() >= 2020) {
-      return assign.dueDate;
-    }
-    // 2. Parseable string / ISO timestamp in dueDate (excluding 2001 anomaly)
-    if (assign.dueDate && typeof assign.dueDate === 'string' && assign.dueDate.trim()) {
+      d = new Date(assign.dueDate.getTime());
+    } else if (assign.dueDate && typeof assign.dueDate === 'string' && assign.dueDate.trim()) {
+      // 2. Parseable string / ISO timestamp in dueDate (excluding 2001 anomaly)
       if (!assign.dueDate.startsWith('2001') && !assign.dueDate.startsWith('19')) {
         const parsed = new Date(assign.dueDate);
         if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020) {
-          return parsed;
+          d = parsed;
         }
       }
     }
     // 3. Parse dueDateStr via parseMoodleDate
-    if (assign.dueDateStr && assign.dueDateStr !== 'No deadline' && assign.dueDateStr !== 'No due date') {
-      const parsed = parseMoodleDate(assign.dueDateStr, assign.courseName || '', now);
+    if (!d && assign.dueDateStr && assign.dueDateStr !== 'No deadline' && assign.dueDateStr !== 'No due date') {
+      const parsed = (typeof parseMoodleDate === 'function') ? parseMoodleDate(assign.dueDateStr, assign.courseName || '', now) : null;
       if (parsed && !isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020) {
-        return parsed;
+        d = parsed;
       }
     }
     // 4. Extrapolate from timeRemaining (e.g. "Due in 4d", "Due in 27d", "Due in 14h")
-    if (assign.timeRemaining && typeof assign.timeRemaining === 'string') {
+    if (!d && assign.timeRemaining && typeof assign.timeRemaining === 'string') {
       const dMatch = assign.timeRemaining.match(/(?:due in|in|baki)?\s*(\d+)\s*(?:d|days?|hari)\b/i);
       const hMatch = assign.timeRemaining.match(/(?:due in|in)?\s*(\d+)\s*(?:h|hours?|jam)\b/i);
       if (dMatch) {
         const days = parseInt(dMatch[1], 10);
-        return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 23, 59, 0);
-      }
-      if (hMatch) {
+        d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 23, 59, 0);
+      } else if (hMatch) {
         const hrs = parseInt(hMatch[1], 10);
-        return new Date(now.getTime() + hrs * 3600 * 1000);
+        d = new Date(now.getTime() + hrs * 3600 * 1000);
+      } else if (/overdue today|due today/i.test(assign.timeRemaining)) {
+        d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 0);
       }
-      if (/overdue today|due today/i.test(assign.timeRemaining)) {
-        return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 0);
+    }
+
+    if (d && !isNaN(d.getTime())) {
+      if (typeof normalizeMidnightDeadline === 'function') {
+        return normalizeMidnightDeadline(d);
+      } else if (d.getHours() === 0 && d.getMinutes() === 0) {
+        return new Date(d.getTime() - 60 * 1000);
       }
+      return d;
     }
     return null;
   }
@@ -14684,6 +14714,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.computeAttendanceCardViewModel = computeAttendanceCardViewModel;
     window.renderUnifiedAttendanceCardHtml = renderUnifiedAttendanceCardHtml;
     window.renderAttendanceList = renderAttendanceList;
+    window.normalizeMidnightDeadline = normalizeMidnightDeadline;
   }
 
   initHeaderBrandLogo();

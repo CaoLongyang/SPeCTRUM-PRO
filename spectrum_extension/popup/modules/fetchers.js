@@ -881,6 +881,15 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
   return assignments;
 }
 
+// Edge case helper: if a deadline is set to exactly 00:00 (midnight), in student practice it belongs to 23:59 of the day before
+function normalizeMidnightDeadline(d) {
+  if (!d || isNaN(d.getTime())) return d;
+  if (d.getHours() === 0 && d.getMinutes() === 0) {
+    return new Date(d.getTime() - 60 * 1000); // 23:59:00 of day before
+  }
+  return d;
+}
+
 // Intelligent Moodle Date Parser with Multi-Language (EN/BM) & Academic Year Inference
 function parseMoodleDate(str, courseName = '', now = new Date()) {
   if (!str) return null;
@@ -920,7 +929,8 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
         if (!isPM && hours === 12) hours = 0;
       }
     }
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, mins, 0);
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, mins, 0);
+    return normalizeMidnightDeadline(d);
   }
   if (/\b(tomorrow|esok)\b/i.test(clean)) {
     const timeMatch = clean.match(/(\d{1,2})[:\.](\d{2})(?:\s*(AM|PM))?/i);
@@ -934,7 +944,8 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
         if (!isPM && hours === 12) hours = 0;
       }
     }
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, hours, mins, 0);
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, hours, mins, 0);
+    return normalizeMidnightDeadline(d);
   }
 
   // Handle relative day count: e.g. "Due in 4 days", "4 days remaining", "Due in 4d", "baki 4 hari", "dalam 4 hari"
@@ -1022,7 +1033,7 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
       }
     }
     const d = new Date(year, month - 1, day, hours, mins, 0);
-    if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) return d;
+    if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) return normalizeMidnightDeadline(d);
   }
 
   // Deduce correct academic year upfront
@@ -1079,7 +1090,7 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
         chosenYear = (month >= 8 && month <= 12) ? startYr : endYr;
       }
       const d = new Date(chosenYear, month - 1, day, hours, mins, 0);
-      if (!isNaN(d.getTime())) return d;
+      if (!isNaN(d.getTime())) return normalizeMidnightDeadline(d);
     }
   }
 
@@ -1089,7 +1100,7 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
     const p = Date.parse(clean);
     if (!isNaN(p)) {
       const d = new Date(p);
-      if (d.getFullYear() >= 2020) return d;
+      if (d.getFullYear() >= 2020) return normalizeMidnightDeadline(d);
     }
   }
 
@@ -1102,7 +1113,7 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
   if (!isNaN(p)) {
     const parsedDate = new Date(p);
     if (parsedDate.getFullYear() >= 2020) {
-      return parsedDate;
+      return normalizeMidnightDeadline(parsedDate);
     }
   }
 
@@ -2112,4 +2123,5 @@ if (typeof window !== "undefined") {
   window.extractOccNumberFromGroupText = extractOccNumberFromGroupText;
   window.fetchUserCourseOccs = fetchUserCourseOccs;
   window.parseAttendanceSummaryStats = parseAttendanceSummaryStats;
+  window.normalizeMidnightDeadline = normalizeMidnightDeadline;
 }
