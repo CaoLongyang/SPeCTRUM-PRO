@@ -2045,6 +2045,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   let hiddenAssignmentDetails = {}; // id -> { id, courseCode, courseName, title, dueDateStr, dateHidden }
   let activePinSession = null;
 
+  function extractAssignmentCmid(str) {
+    if (!str) return '';
+    const s = String(str).trim();
+    const urlM = s.match(/[?&]id=(\d+)/) || s.match(/id=(\d+)/);
+    if (urlM) return urlM[1];
+    const trailingNum = s.match(/(?:_|^)(\d{5,})$/);
+    if (trailingNum) return trailingNum[1];
+    const any5 = s.match(/(\d{5,})/);
+    if (any5) return any5[1];
+    const endDigits = s.match(/(\d+)$/);
+    return endDigits ? endDigits[1] : s;
+  }
+
+  function getUniqueHiddenAssignmentCount() {
+    if (!Array.isArray(hiddenAssignmentIds) || hiddenAssignmentIds.length === 0) return 0;
+    const uniqueKeys = new Set();
+    hiddenAssignmentIds.forEach(id => {
+      if (!id) return;
+      const cmid = extractAssignmentCmid(id);
+      uniqueKeys.add(cmid || String(id));
+    });
+    return uniqueKeys.size;
+  }
+
   function isAssignmentHidden(assign) {
     if (!assign) return false;
     if (assign._hidden || assign.isDeleted) return true;
@@ -2052,7 +2076,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const id = String(assign.id || '');
     if (id && hiddenAssignmentIds.includes(id)) return true;
     const urlId = String(((assign.url || assign.viewUrl || '').match(/id=(\d+)/) || [])[1] || '');
-    if (urlId && (hiddenAssignmentIds.includes(`assign_${urlId}`) || hiddenAssignmentIds.includes(urlId))) return true;
+    const cmid = urlId || extractAssignmentCmid(id);
+    if (cmid) {
+      if (hiddenAssignmentIds.includes(cmid)) return true;
+      if (hiddenAssignmentIds.includes(`assign_${cmid}`)) return true;
+      if (hiddenAssignmentIds.some(hid => String(hid).includes(cmid))) return true;
+    }
     return false;
   }
 
@@ -2464,7 +2493,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!assignId) return;
 
     // Find the assignment in assignmentsData
-    const assign = assignmentsData.find(a => String(a.id) === String(assignId) || (a.url && a.url.includes(`id=${assignId}`)));
+    const assign = assignmentsData.find(a => 
+      String(a.id) === String(assignId) || 
+      (a.url && a.url.includes(`id=${assignId}`)) ||
+      (assignId && String(a.id).includes(String(assignId)))
+    );
     const fullId = assign ? (assign.id || String(assignId)) : String(assignId);
     const courseCode = assign ? (assign.courseCode || assign.courseName || 'Course') : 'Course';
     const title = assign ? (assign.title || assign.name || 'Assignment') : 'Assignment';
@@ -2477,31 +2510,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const confirmMsg = confirmTpl.replace('{course}', courseCode).replace('{title}', title);
     if (!confirm(confirmMsg)) return;
 
-    if (!hiddenAssignmentIds.includes(fullId)) {
-      hiddenAssignmentIds.push(fullId);
-    }
-    if (String(assignId) !== String(fullId) && !hiddenAssignmentIds.includes(String(assignId))) {
-      hiddenAssignmentIds.push(String(assignId));
-    }
-    const urlId = ((assign?.url || assign?.viewUrl || '').match(/id=(\d+)/) || [])[1];
-    if (urlId && !hiddenAssignmentIds.includes(urlId)) {
-      hiddenAssignmentIds.push(urlId);
-    }
+    const cmid = extractAssignmentCmid(assign?.url) || extractAssignmentCmid(assign?.viewUrl) || extractAssignmentCmid(assignId) || '';
+    const canonicalKey = cmid ? `assign_${cmid}` : (fullId || String(assignId));
 
-    if (assign) {
-      assign._hidden = true;
-      assign.isDeleted = true;
-    }
-    assignmentsData.forEach(a => {
-      if (String(a.id) === String(assignId) || String(a.id) === String(fullId)) {
-        a._hidden = true;
-        a.isDeleted = true;
-      }
+    // Build all alias IDs for this single assignment
+    const aliasSet = new Set([canonicalKey, fullId, String(assignId), cmid, `assign_${cmid}`].filter(Boolean));
+
+    // Remove any existing aliases from hiddenAssignmentIds so we only ever have ONE entry per assignment
+    hiddenAssignmentIds = (hiddenAssignmentIds || []).filter(id => !aliasSet.has(String(id)));
+    hiddenAssignmentIds.push(canonicalKey);
+
+    // Clean up any old keys in hiddenAssignmentDetails
+    aliasSet.forEach(k => {
+      delete hiddenAssignmentDetails[k];
     });
 
-    const dueDateText = (assign && assign.dueDateStr) ? assign.dueDateStr : (assign && assign.dueDate ? (assign.dueDate instanceof Date ? assign.dueDate.toLocaleDateString() : String(assign.dueDate)) : 'No deadline');
-    hiddenAssignmentDetails[fullId] = {
-      id: fullId,
+    const dueDateText = (assign && assign.dueDateStr) 
+      ? assign.dueDateStr 
+      : (assign && assign.dueDate ? (assign.dueDate instanceof Date ? assign.dueDate.toLocaleDateString() : String(assign.dueDate)) : 'No deadline');
+
+    hiddenAssignmentDetails[canonicalKey] = {
+      id: canonicalKey,
+      numericId: cmid,
+      aliasIds: Array.from(aliasSet),
       courseCode: courseCode,
       courseName: assign?.courseName || '',
       title: title,
@@ -2509,12 +2540,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       dateHidden: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     };
 
+    if (assign) {
+      assign._hidden = true;
+      assign.isDeleted = true;
+    }
+    assignmentsData.forEach(a => {
+      const aId = String(a.id || '');
+      const aNum = extractAssignmentCmid(a.url) || extractAssignmentCmid(a.viewUrl) || extractAssignmentCmid(aId);
+      if (aliasSet.has(aId) || (aNum && aliasSet.has(aNum))) {
+        a._hidden = true;
+        a.isDeleted = true;
+      }
+    });
+
     await chrome.storage.local.set({
       hiddenAssignmentIds: hiddenAssignmentIds,
       hiddenAssignmentDetails: hiddenAssignmentDetails
     });
 
-    logDiag('Assignments:Delete', `✔ Deleted assignment [${fullId}] (${courseCode} · ${title}). Total hidden: ${hiddenAssignmentIds.length}`);
+    logDiag('Assignments:Delete', `✔ Deleted assignment [${canonicalKey}] (${courseCode} · ${title}). Total hidden: ${hiddenAssignmentIds.length}`);
 
     renderAssignmentsList();
     renderTimelineVisualizer();
@@ -2538,16 +2582,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof showOccNotification === 'function') showOccNotification('success', successMsg);
   }
 
-  async function restoreAssignmentActivity(assignId) {
+  async function restoreAssignmentActivity(assignId, optionalAllIds) {
     if (!assignId) return;
-    hiddenAssignmentIds = hiddenAssignmentIds.filter(id => id !== assignId && id !== String(assignId));
-    delete hiddenAssignmentDetails[assignId];
-    Object.keys(hiddenAssignmentDetails).forEach(k => {
-      if (hiddenAssignmentDetails[k].id === assignId) delete hiddenAssignmentDetails[k];
+
+    const idsToRemove = new Set();
+    idsToRemove.add(String(assignId));
+
+    if (Array.isArray(optionalAllIds)) {
+      optionalAllIds.forEach(id => { if (id) idsToRemove.add(String(id)); });
+    }
+
+    const num = extractAssignmentCmid(assignId);
+    if (num) {
+      idsToRemove.add(num);
+      idsToRemove.add(`assign_${num}`);
+      (hiddenAssignmentIds || []).forEach(hid => {
+        if (String(hid).includes(num)) idsToRemove.add(String(hid));
+      });
+    }
+
+    Object.keys(hiddenAssignmentDetails || {}).forEach(k => {
+      const d = hiddenAssignmentDetails[k];
+      if (idsToRemove.has(k) || idsToRemove.has(String(d?.id)) || (d?.numericId && idsToRemove.has(String(d.numericId)))) {
+        idsToRemove.add(k);
+        if (d?.id) idsToRemove.add(String(d.id));
+        if (d?.numericId) idsToRemove.add(String(d.numericId));
+        if (Array.isArray(d?.aliasIds)) {
+          d.aliasIds.forEach(a => idsToRemove.add(String(a)));
+        }
+      }
+    });
+
+    hiddenAssignmentIds = (hiddenAssignmentIds || []).filter(id => !idsToRemove.has(String(id)));
+
+    idsToRemove.forEach(k => {
+      delete hiddenAssignmentDetails[k];
     });
 
     assignmentsData.forEach(a => {
-      if (String(a.id) === String(assignId)) {
+      const aId = String(a.id || '');
+      const aNum = extractAssignmentCmid(a.url) || extractAssignmentCmid(a.viewUrl) || extractAssignmentCmid(aId);
+      if (idsToRemove.has(aId) || (aNum && idsToRemove.has(aNum))) {
         a._hidden = false;
         a.isDeleted = false;
       }
@@ -2611,23 +2686,76 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnRestoreAll = document.getElementById('btn-restore-all-assign');
     if (!container) return;
 
+    // Deduplicate and group hidden items by canonical assignment key (cmid or id)
+    const grouped = new Map();
     const detailKeys = Object.keys(hiddenAssignmentDetails || {});
-    const items = [];
-    (hiddenAssignmentIds || []).forEach(id => {
-      if (detailKeys.includes(id)) {
-        if (!items.some(it => it.id === id)) {
-          items.push(hiddenAssignmentDetails[id]);
-        }
-      } else if (!items.some(it => it.id === id)) {
-        const matchingAssign = assignmentsData.find(a => String(a.id) === String(id));
-        items.push({
-          id: id,
-          courseCode: matchingAssign?.courseCode || 'Assignment',
-          title: matchingAssign?.title || `ID: ${id}`,
-          dueDateStr: matchingAssign?.dueDateStr || '',
-          dateHidden: 'Saved'
+
+    (hiddenAssignmentIds || []).forEach(rawId => {
+      if (!rawId) return;
+      const sId = String(rawId).trim();
+      let detail = hiddenAssignmentDetails[sId];
+      if (!detail) {
+        const foundKey = detailKeys.find(k => {
+          const d = hiddenAssignmentDetails[k];
+          return k === sId || d?.id === sId || (Array.isArray(d?.aliasIds) && d.aliasIds.includes(sId));
         });
+        if (foundKey) detail = hiddenAssignmentDetails[foundKey];
       }
+
+      const matchingAssign = assignmentsData.find(a => {
+        if (String(a.id) === sId) return true;
+        const uId = extractAssignmentCmid(a.url) || extractAssignmentCmid(a.viewUrl);
+        if (uId && (uId === sId || sId.includes(uId))) return true;
+        return false;
+      });
+
+      const assignNum = matchingAssign ? (extractAssignmentCmid(matchingAssign.url) || extractAssignmentCmid(matchingAssign.viewUrl) || extractAssignmentCmid(matchingAssign.id)) : '';
+      const groupKey = assignNum || extractAssignmentCmid(sId) || detail?.numericId || sId;
+
+      const courseCode = detail?.courseCode || matchingAssign?.courseCode || '';
+      const title = detail?.title || matchingAssign?.title || '';
+      const dueDateStr = detail?.dueDateStr || matchingAssign?.dueDateStr || '';
+      const dateHidden = detail?.dateHidden || 'Recently';
+
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          groupKey: groupKey,
+          targetId: detail?.id || matchingAssign?.id || sId,
+          allAssociatedIds: new Set([sId, groupKey, detail?.id, matchingAssign?.id, `assign_${groupKey}`].filter(Boolean)),
+          courseCode: courseCode,
+          title: title,
+          dueDateStr: dueDateStr,
+          dateHidden: dateHidden,
+          hasRichDetails: Boolean(detail && detail.courseCode && detail.courseCode !== 'Assignment')
+        });
+      } else {
+        const existing = grouped.get(groupKey);
+        existing.allAssociatedIds.add(sId);
+        if (detail?.id) existing.allAssociatedIds.add(detail.id);
+        if (matchingAssign?.id) existing.allAssociatedIds.add(matchingAssign.id);
+
+        if (!existing.hasRichDetails && (detail || (matchingAssign && courseCode !== 'Assignment'))) {
+          if (courseCode && courseCode !== 'Assignment') existing.courseCode = courseCode;
+          if (title && !title.startsWith('ID:')) existing.title = title;
+          if (dueDateStr) existing.dueDateStr = dueDateStr;
+          if (detail?.dateHidden && detail.dateHidden !== 'Saved') existing.dateHidden = detail.dateHidden;
+          existing.hasRichDetails = true;
+          existing.targetId = detail?.id || matchingAssign?.id || existing.targetId;
+        }
+      }
+    });
+
+    const items = Array.from(grouped.values()).map(item => {
+      const displayCourse = (item.courseCode && item.courseCode !== 'Assignment') ? item.courseCode : '';
+      const displayTitle = item.title || (item.groupKey ? `ID: ${item.groupKey}` : 'Assignment');
+      return {
+        id: item.targetId || item.groupKey,
+        allIds: Array.from(item.allAssociatedIds),
+        courseCode: displayCourse,
+        title: displayTitle,
+        dueDateStr: item.dueDateStr,
+        dateHidden: item.dateHidden || 'Recently'
+      };
     });
 
     if (countEl) {
@@ -2667,7 +2795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="pref-hidden-title-mono">${heading}</div>
             <div class="pref-hidden-time-mono">Excluded: ${escapeHtml(dateText)}${dueInfo}</div>
           </div>
-          <button type="button" class="pref-wireframe-btn btn-restore-single-assign" data-assign-id="${escapeHtml(item.id)}">
+          <button type="button" class="pref-wireframe-btn btn-restore-single-assign" data-assign-id="${escapeHtml(item.id)}" data-all-ids="${escapeHtml(item.allIds.join(','))}">
             ↺ Restore
           </button>
         </div>
@@ -2677,7 +2805,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     container.querySelectorAll('.btn-restore-single-assign').forEach(btn => {
       btn.addEventListener('click', async () => {
         const assignId = btn.dataset.assignId;
-        if (assignId) await restoreAssignmentActivity(assignId);
+        const allIdsStr = btn.dataset.allIds || '';
+        const allIds = allIdsStr ? allIdsStr.split(',').filter(Boolean) : [assignId];
+        if (assignId) await restoreAssignmentActivity(assignId, allIds);
       });
     });
   }
@@ -9531,7 +9661,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!assignmentsListEl) return;
 
     let filtered = assignmentsData.filter(a => !isAssignmentHidden(a));
-    const hiddenCount = (hiddenAssignmentIds && hiddenAssignmentIds.length) || 0;
+    const hiddenCount = (typeof getUniqueHiddenAssignmentCount === 'function') 
+      ? getUniqueHiddenAssignmentCount() 
+      : ((hiddenAssignmentIds && hiddenAssignmentIds.length) || 0);
     const restoreBarHtml = hiddenCount > 0 ? `
       <div class="assign-hidden-restore-bar">
         <button type="button" id="btn-restore-assignments-pill" class="assign-hidden-restore-btn" title="Click to restore excluded assignments">
