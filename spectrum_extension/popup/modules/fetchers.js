@@ -793,7 +793,8 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
       const html = await res.text();
       const cleanHtml = cleanHtmlForParser(html);
       const doc = parser.parseFromString(`<base href="${origin}/">${cleanHtml}`, 'text/html');
-      const directLinks = doc.querySelectorAll('a[href*="/mod/assign/view.php?id="], a[href*="mod/assign/view.php?id="], a[href*="/mod/quiz/view.php?id="], a[href*="mod/quiz/view.php?id="], a[href*="/mod/url/view.php?id="], a[href*="mod/url/view.php?id="], a[href*="/mod/page/view.php?id="], a[href*="mod/page/view.php?id="]');
+      // Only scrape genuine Assignment and Quiz modules (do NOT scrape arbitrary mod/url or mod/page study materials)
+      const directLinks = doc.querySelectorAll('a[href*="/mod/assign/view.php?id="], a[href*="mod/assign/view.php?id="], a[href*="/mod/quiz/view.php?id="], a[href*="mod/quiz/view.php?id="]');
 
       const itemsToInspect = [];
 
@@ -817,18 +818,11 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
         if (!title) title = (link.textContent || link.innerText || '').trim();
         if (!title) title = href.includes('/quiz/') ? 'Quiz' : 'Assignment';
 
-        const isUrlOrPage = href.includes('/mod/url/') || href.includes('/mod/page/');
         const parentActivity = link.closest('.activity, li.activity, .activityinstance') || link.parentElement;
         const contextText = `${title} ${parentActivity ? (parentActivity.textContent || '') : ''}`;
 
-        // If it's a generic mod/url or mod/page, only proceed if title or context explicitly matches assessment keywords
-        if (isUrlOrPage) {
-          const isAssessment = /quiz|kuiz|test|ujian|mid[\s-]?sem|exam|peperiksaan|assessment|pentaksiran/i.test(contextText);
-          if (!isAssessment) continue;
-        }
-
         let dueDateStr = '';
-        let statusText = isUrlOrPage ? 'Assessment Link' : 'Not submitted';
+        let statusText = 'Not submitted';
 
         if (parentActivity) {
           const dateEl = parentActivity.querySelector('.activity-dates, .text-muted, [data-region="activity-dates"], .activity-information, [data-region="activity-information"]');
@@ -850,31 +844,6 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
           if (examInfo && !examInfo.stale) {
             dueDateStr = `${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim();
           }
-        }
-
-        if (isUrlOrPage) {
-          const parsedMeta = calculateAssignmentTiming(dueDateStr, statusText, now, courseName);
-          if (isPastSemesterStale(parsedMeta.dueDate, title, now, courseName)) continue;
-
-          assignments.push({
-            id: `url_quiz_${courseId}_${itemId}`,
-            courseId,
-            courseCode,
-            courseName,
-            title,
-            url: href,
-            dueDateStr: dueDateStr || 'See link',
-            dueDate: parsedMeta.dueDate,
-            statusText,
-            isSubmitted: false,
-            isOverdue: parsedMeta.isOverdue,
-            isDueSoon: parsedMeta.isDueSoon,
-            timeRemaining: parsedMeta.timeRemaining,
-            badgeClass: parsedMeta.badgeClass,
-            badgeLabel: /exam|peperiksaan|mid[\s-]?sem/i.test(title) ? '📝 Exam Link' : '⏳ Quiz Link'
-          });
-          logDiag('Sync:Assign', `[${courseCode || courseId}] Assessment link "${title}" -> Due: "${dueDateStr || 'None'}", Parsed: ${parsedMeta.dueDate ? formatDateKey(parsedMeta.dueDate) : 'None'}`);
-          continue;
         }
 
         // If dueDateStr is still missing, queue for detailed page inspection (limit to 15)
@@ -1029,8 +998,10 @@ function isPastSemesterStale(dueDate, title = '', now = new Date(), courseName =
   // 1. If dueDate is known and valid:
   if (dueDate && !isNaN(dueDate.getTime())) {
     const diffDays = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24);
-    // If deadline passed more than 120 days ago (~4 months / prior semester), it's stale
-    if (diffDays > 120) return true;
+    // If deadline passed more than 90 days ago (~3 months / prior semester), it's stale
+    if (diffDays > 90) return true;
+    // If due in a past year (e.g. 2025 or earlier when current year is 2026)
+    if (dueDate.getFullYear() < now.getFullYear()) return true;
   }
 
   // 2. Explicit past academic session in title vs current course session
@@ -1043,17 +1014,22 @@ function isPastSemesterStale(dueDate, title = '', now = new Date(), courseName =
       const courseEndYear = 2000 + parseInt(courseSessMatch[2], 10);
       if (itemEndYear < courseEndYear) return true;
     } else {
-      if (itemEndYear < now.getFullYear()) return true;
+      if (itemEndYear <= now.getFullYear()) return true;
     }
   }
 
-  // 3. Explicit old year pattern in title when no recent due date is present
-  // e.g. "Quiz 2025" or "Test 1 (2024)" when now is late 2026
+  // 3. Explicit old year pattern in title (e.g. "2025" or earlier when now is 2026)
+  const oldYearMatch = (title || '').match(/\b(20[12][0-9])\b/);
+  if (oldYearMatch) {
+    const y = parseInt(oldYearMatch[1], 10);
+    if (y < now.getFullYear()) return true;
+  }
+
+  // 4. Stale weekly quizzes with no deadline from early weeks (e.g. Week 1 to 4) when semester is in Week 7+
   if (!dueDate || isNaN(dueDate.getTime())) {
-    const oldYearMatch = (title || '').match(/\b(20[12][0-9])\b/);
-    if (oldYearMatch) {
-      const y = parseInt(oldYearMatch[1], 10);
-      if (y < now.getFullYear() - 1) return true;
+    const weekMatch = (title || '').match(/\bweek\s*0?([1-4])\b/i);
+    if (weekMatch && (now.getMonth() >= 10 || now.getMonth() <= 1)) {
+      return true;
     }
   }
 

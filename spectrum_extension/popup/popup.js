@@ -106,6 +106,7 @@ const I18N = {
       pref: 'Preferences',
       mat: 'Materials',
       assign: 'Tutorials',
+      test: 'Tests & Exams',
       att: 'Attendance',
       notice: 'Notices',
       timeline: 'Timeline',
@@ -312,6 +313,7 @@ const I18N = {
       pref: 'Tetapan',
       mat: 'Bahan Kursus',
       assign: 'Tutorial',
+      test: 'Ujian & Kuiz',
       att: 'Kehadiran',
       notice: 'Notis',
       timeline: 'Garis Masa',
@@ -518,6 +520,7 @@ const I18N = {
       pref: '设置',
       mat: '课件',
       assign: '作业',
+      test: '测验与考试',
       att: '签到',
       notice: '通知',
       timeline: '时间轴',
@@ -811,6 +814,7 @@ function updateSidebarLabels() {
     'rail-btn-pref': t('tooltips', 'pref'),
     'rail-btn-mat': t('tooltips', 'mat'),
     'rail-toggle-assign': t('tooltips', 'assign'),
+    'rail-toggle-test': t('tooltips', 'test'),
     'rail-toggle-att': t('tooltips', 'att'),
     'rail-toggle-notice': t('tooltips', 'notice'),
     'rail-mode-timeline': t('tooltips', 'timeline'),
@@ -833,6 +837,8 @@ function updateSidebarLabels() {
   if (dockNotice) dockNotice.dataset.tooltip = `[ ${t('tooltips', 'notice')} ]`;
   const dockTutorial = document.getElementById('dock-btn-tutorial');
   if (dockTutorial) dockTutorial.dataset.tooltip = `[ ${t('tooltips', 'assign')} ]`;
+  const dockTest = document.getElementById('dock-btn-test');
+  if (dockTest) dockTest.dataset.tooltip = `[ ${t('tooltips', 'test')} ]`;
   const dockAtt = document.getElementById('dock-btn-attendance');
   if (dockAtt) dockAtt.dataset.tooltip = `[ ${t('tooltips', 'att')} ]`;
 }
@@ -1161,7 +1167,16 @@ function updateHeaderTranslations() {
     legendToday.innerHTML = rectHtml + (currentLang === 'zh' ? '今日' : (currentLang === 'bm' ? 'Hari Ini' : 'Today'));
   }
   const legendItems = document.querySelectorAll('#mini-cal-legend .legend-item:not(.legend-today-btn)');
-  if (legendItems && legendItems.length >= 3) {
+  if (legendItems && legendItems.length >= 4) {
+    const dotNotice = legendItems[0].querySelector('.legend-dot');
+    const dotTutorial = legendItems[1].querySelector('.legend-dot');
+    const dotTest = legendItems[2].querySelector('.legend-dot');
+    const dotAtt = legendItems[3].querySelector('.legend-dot');
+    legendItems[0].innerHTML = (dotNotice ? dotNotice.outerHTML : '<span class="legend-dot dot-notice"></span>') + (currentLang === 'zh' ? '通知' : (currentLang === 'bm' ? 'Notis' : 'Notice'));
+    legendItems[1].innerHTML = (dotTutorial ? dotTutorial.outerHTML : '<span class="legend-dot dot-tutorial"></span>') + (currentLang === 'zh' ? '作业' : (currentLang === 'bm' ? 'Tugasan' : 'Tutorial'));
+    legendItems[2].innerHTML = (dotTest ? dotTest.outerHTML : '<span class="legend-dot dot-test"></span>') + (currentLang === 'zh' ? '测验' : (currentLang === 'bm' ? 'Ujian' : 'Test'));
+    legendItems[3].innerHTML = (dotAtt ? dotAtt.outerHTML : '<span class="legend-dot dot-attendance"></span>') + (currentLang === 'zh' ? '签到' : (currentLang === 'bm' ? 'Kehadiran' : 'Attendance'));
+  } else if (legendItems && legendItems.length >= 3) {
     const dotNotice = legendItems[0].querySelector('.legend-dot');
     const dotTutorial = legendItems[1].querySelector('.legend-dot');
     const dotAtt = legendItems[2].querySelector('.legend-dot');
@@ -1175,6 +1190,8 @@ function updateHeaderTranslations() {
   if (pillNotice) pillNotice.textContent = t('cards', 'notice');
   const pillTutorial = document.querySelector('.radio-pill-btn[data-sub="sub-assignments"] span:first-child');
   if (pillTutorial) pillTutorial.textContent = t('tooltips', 'assign');
+  const pillTest = document.querySelector('.radio-pill-btn[data-sub="sub-tests"] span:first-child');
+  if (pillTest) pillTest.textContent = (currentLang === 'zh' ? '测验' : (currentLang === 'bm' ? 'Ujian' : 'Test'));
   const pillAtt = document.querySelector('.radio-pill-btn[data-sub="sub-attendance"] span:first-child');
   if (pillAtt) pillAtt.textContent = t('tooltips', 'att');
 }
@@ -2116,6 +2133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const MINI_ICONS = {
     notice: `<svg class="icon-svg icon-notice" viewBox="0 0 24 24"><path d="M3 11l16-5v12L3 13v-2z"/><path d="M10 15v5"/></svg>`,
     assignment: `<svg class="icon-svg icon-assignment" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="m9 14 2 2 4-4"/></svg>`,
+    test: `<svg class="icon-svg icon-test" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12a1.5 1.5 0 0 1 1.5 1.5v15a1.5 1.5 0 0 1-1.5 1.5H4a1.5 1.5 0 0 1-1.5-1.5V4.5A1.5 1.5 0 0 1 4 3z"/><rect x="2" y="5" width="12.5" height="5" rx="1.2" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="1.4"/><text x="3" y="8.8" font-size="3.6" font-weight="900" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" fill="currentColor" stroke="none" letter-spacing="-0.2">EXAM</text><line x1="5" y1="13.5" x2="11.5" y2="13.5" stroke-width="1.6"/><line x1="5" y1="16.5" x2="11.5" y2="16.5" stroke-width="1.6"/><line x1="5" y1="19.5" x2="9.5" y2="19.5" stroke-width="1.6"/><path d="M14.5 18l5.5-9.5 2 1-5.5 9.5-2.5.5.5-1.5z" stroke-width="1.4" fill="currentColor" fill-opacity="0.18"/><path d="M20 8.5l1.5-1.5 1 1-1.5 1.5" stroke-width="1.4"/></svg>`,
     attendance: `<svg class="icon-svg icon-attendance" viewBox="0 0 24 24" fill="currentColor" stroke="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10.5" cy="6.7" r="4.7"/><path d="M 3.38 14.28 C 3.0 14.8 2.9 15.5 3.0 16.9 C 3.2 18.2 4.0 19.0 5.7 19.9 C 7.3 20.6 9.4 21.0 11.2 21.0 C 10.5 20.1 9.8 18.8 9.6 17.5 C 9.5 15.8 10.1 14.5 10.5 13.5 L 4.8 13.5 C 4.0 13.5 3.6 13.8 3.38 14.28 Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M 15.8 11.5 A 5.3 5.3 0 0 1 15.8 22.1 A 5.3 5.3 0 0 1 15.8 11.5 Z M 19.19 14.84 L 19.14 15.04 L 18.73 15.50 L 15.04 19.14 L 14.74 19.19 L 14.53 19.08 L 12.43 16.94 L 12.49 16.48 L 12.74 16.27 L 13.10 16.27 L 14.79 17.91 L 14.89 17.91 L 18.27 14.48 L 18.57 14.33 L 18.88 14.38 L 19.08 14.58 Z"/></svg>`,
     lecture: `<svg class="icon-svg icon-attendance" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 16v5"/><path d="m9 8 3-2 3 2"/></svg>`,
     tutorial: `<svg class="icon-svg icon-attendance" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`,
@@ -3408,8 +3426,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Left Rail Checklist Toggles (Assignment, Attendance, Notice)
+  // Left Rail Checklist Toggles (Assignment, Test, Attendance, Notice)
   const railToggleAssign = document.getElementById('rail-toggle-assign');
+  const railToggleTest = document.getElementById('rail-toggle-test');
   const railToggleAtt = document.getElementById('rail-toggle-att');
   const railToggleNotice = document.getElementById('rail-toggle-notice');
 
@@ -3429,6 +3448,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   bindRailToggle(railToggleAssign, chkCalTasks, chkTlTasks);
+  bindRailToggle(railToggleTest, null, null);
   bindRailToggle(railToggleAtt, chkCalAtt, chkTlAtt);
   bindRailToggle(railToggleNotice, chkCalAnn, chkTlAnn);
 
@@ -3704,6 +3724,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   selectedCourseFilterId = null;
   selectedCourseFilterCode = null;
 
+  function isTestActivity(item) {
+    if (!item) return false;
+    const id = String(item.id || '');
+    if (id.startsWith('quiz_') || id.startsWith('url_quiz_') || id.startsWith('label_exam_')) return true;
+    const url = String(item.url || item.viewUrl || '');
+    if (url.includes('/mod/quiz/')) return true;
+    const badge = String(item.badgeLabel || '');
+    if (/quiz|exam|test|ujian|kuiz/i.test(badge)) return true;
+    const title = String(item.title || item.name || '');
+    return /\b(?:quiz|kuiz|mid[\s-]?sem|exam(?:ination)?|peperiksaan|ujian)\b|\btest\s*\d+/i.test(title);
+  }
+
+  function isNonAssessmentItem(item) {
+    if (!item) return true;
+    const title = String(item.title || item.name || '').trim();
+    const lower = title.toLowerCase();
+    const url = String(item.url || item.viewUrl || '').toLowerCase();
+    const id = String(item.id || '');
+
+    // 1. Explicit non-assessment keywords in title
+    if (/\b(?:sketchpad|example of|query example|recursive query|ted intros|effective openings|good\/bad examples|skills survey|sample code|proforma|reading list)\b/i.test(lower)) {
+      return true;
+    }
+
+    // 2. /mod/url/ or /mod/page/ or id starting with url_quiz_
+    const isUrlOrPage = url.includes('/mod/url/') || url.includes('/mod/page/') || id.startsWith('url_quiz_');
+    if (isUrlOrPage) {
+      const isExplicitExam = /\b(?:mid[\s-]?sem|final\s*exam|examination|peperiksaan)\b|\btest\s*\d+\b/i.test(lower);
+      if (!isExplicitExam || !item.dueDate) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function isActivityActive(type) {
     if (document.body && document.body.classList.contains('is-full-tab')) {
       if (type === 'notice') {
@@ -3711,6 +3766,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btn) return btn.classList.contains('active');
       } else if (type === 'tutorial' || type === 'assignment') {
         const btn = document.getElementById('rail-toggle-assign');
+        if (btn) return btn.classList.contains('active');
+      } else if (type === 'test' || type === 'quiz' || type === 'exam') {
+        const btn = document.getElementById('rail-toggle-test');
         if (btn) return btn.classList.contains('active');
       } else if (type === 'attendance') {
         const btn = document.getElementById('rail-toggle-att');
@@ -3721,6 +3779,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       notice: 'dock-btn-notice',
       tutorial: 'dock-btn-tutorial',
       assignment: 'dock-btn-tutorial',
+      test: 'dock-btn-test',
+      quiz: 'dock-btn-test',
+      exam: 'dock-btn-test',
       attendance: 'dock-btn-attendance'
     };
     const btn = document.getElementById(map[type]);
@@ -4075,6 +4136,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isSubmitted) stateClass = 'is-submitted';
     else if (isOverdue) stateClass = 'is-overdue';
 
+    const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
+
     return {
       rawId,
       dateKey,
@@ -4088,15 +4151,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       timestampText,
       btnClass,
       btnText,
-      submitUrl
+      submitUrl,
+      isTest
     };
   }
 
   function renderUnifiedAssignmentCardHtml(vm) {
+    const isTest = vm && vm.isTest;
+    const cardScopeClass = isTest ? 'scoped-card-test' : 'scoped-card-assignment';
+    const cardTypeClass = isTest ? 'card-test' : 'card-assignment assignment-card';
+    const iconBoxClass = isTest ? 'icon-box-test' : 'icon-box-assignment';
+    const iconSvg = isTest ? MINI_ICONS.test : MINI_ICONS.assignment;
+
     return `
-      <div class="spectrum-card card-assignment assignment-card scoped-card scoped-card-assignment ${vm.stateClass}" data-assign-id="${escapeHtml(vm.rawId)}" data-id="${escapeHtml(vm.rawId)}" data-date-key="${escapeHtml(vm.dateKey)}">
-        <div class="card-bounded-icon icon-box-assignment ${vm.stateClass}">
-          ${MINI_ICONS.assignment}
+      <div class="spectrum-card ${cardTypeClass} scoped-card ${cardScopeClass} ${vm.stateClass}" data-assign-id="${escapeHtml(vm.rawId)}" data-id="${escapeHtml(vm.rawId)}" data-date-key="${escapeHtml(vm.dateKey)}" data-activity-type="${isTest ? 'test' : 'tutorial'}">
+        <div class="card-bounded-icon ${iconBoxClass} ${vm.stateClass}">
+          ${iconSvg}
         </div>
         <div class="card-content-wrap">
           <div class="assign-row-header">
@@ -5335,14 +5405,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Gather activities for this course
     const showNotice = isActivityActive('notice');
     const showTasks = isActivityActive('tutorial');
+    const showTests = isActivityActive('test');
     const showAtt = isActivityActive('attendance');
 
     const matchedAnns = showNotice ? announcementsData.filter(a => isActivityForCourse(a, cInfo)) : [];
-    const matchedAssigns = showTasks ? assignmentsData.filter(a => {
+    const matchedAssigns = assignmentsData.filter(a => {
       if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
       if (!isActivityForCourse(a, cInfo)) return false;
-      return (typeof isAssignmentMatchingOcc === 'function') ? isAssignmentMatchingOcc(a, cInfo.userOcc) : true;
-    }) : [];
+      if (typeof isAssignmentMatchingOcc === 'function' && !isAssignmentMatchingOcc(a, cInfo.userOcc)) return false;
+      const isTest = isTestActivity(a);
+      if (isTest && !showTests) return false;
+      if (!isTest && !showTasks) return false;
+      return true;
+    });
     const matchedAtt = showAtt ? attendancesData.filter(a => {
       if (typeof isAttendanceHidden === 'function' && isAttendanceHidden(a)) return false;
       return isActivityForCourse(a, cInfo);
@@ -5646,14 +5721,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const showNotice = isActivityActive('notice');
     const showTasks = isActivityActive('tutorial');
+    const showTests = isActivityActive('test');
     const showAtt = isActivityActive('attendance');
 
     listEl.innerHTML = courses.map(c => {
       const isSel = (selectedCourseFilterId && String(selectedCourseFilterId) === String(c.courseId)) ||
                     (selectedCourseFilterCode && c.courseCode === selectedCourseFilterCode);
       const acronym = generateCourseAcronym(c.courseName, c.courseCode);
-      const activeTasks = (c.pendingCount !== undefined) ? c.pendingCount : (c.taskCount || 0);
-      const cTotal = (showNotice ? (c.annCount || 0) : 0) + (showTasks ? activeTasks : 0) + (showAtt ? (c.attCount || 0) : 0);
+      const courseAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
+        if (!isActivityForCourse(a, c)) return false;
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
+        if (a.isSubmitted) return false;
+        const isTest = isTestActivity(a);
+        if (isTest && !showTests) return false;
+        if (!isTest && !showTasks) return false;
+        return true;
+      }) : [];
+      const cTotal = (showNotice ? (c.annCount || 0) : 0) + courseAssigns.length + (showAtt ? (c.attCount || 0) : 0);
 
       let occText = '';
       if (c.userOcc) {
@@ -5727,6 +5811,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const showNotice = isActivityActive('notice');
     const showTasks = isActivityActive('tutorial');
+    const showTests = isActivityActive('test');
     const showAtt = isActivityActive('attendance');
 
     if (popupSidebarMode === 'calendar') {
@@ -5738,19 +5823,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return !isNaN(d.getTime()) && formatDateKey(d) === targetDateKey;
       }) : [];
 
-      const todayKey = formatDateKey(new Date());
-      const isTargetToday = (targetDateKey === todayKey);
-
-      let dAssigns = showTasks && (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
+      let dAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
         if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
+        const isTest = isTestActivity(a);
+        if (isTest && !showTests) return false;
+        if (!isTest && !showTasks) return false;
         const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(a, new Date()) : a.dueDate;
         const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
         const isValidDate = d && !isNaN(d.getTime());
         if (isValidDate) {
           return formatDateKey(d) === targetDateKey;
         }
-        const isPending = !a.isSubmitted && !a.isOverdue;
-        return isPending && isTargetToday;
+        return false;
       }) : [];
 
       let dAtt = showAtt && (typeof attendancesData !== 'undefined') ? attendancesData.filter(att => {
@@ -5788,7 +5872,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       // ── Courses Mode: count across the whole semester ──
       let allAnns = showNotice && (typeof announcementsData !== 'undefined') ? announcementsData : [];
-      let allAssigns = showTasks && (typeof assignmentsData !== 'undefined') ? assignmentsData : [];
+      let allAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
+        const isTest = isTestActivity(a);
+        if (isTest && !showTests) return false;
+        if (!isTest && !showTasks) return false;
+        return true;
+      }) : [];
       let allAtt = showAtt && (typeof attendancesData !== 'undefined') ? attendancesData.filter(a => !isAttendanceHidden(a)) : [];
 
       totalAll = allAnns.length + allAssigns.length + allAtt.length;
@@ -6086,7 +6176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ── Rail Activity Filter Buttons (collapsed view) ──
-    ['rail-btn-notice', 'rail-btn-tutorial', 'rail-btn-attendance'].forEach(id => {
+    ['rail-btn-notice', 'rail-btn-tutorial', 'rail-btn-test', 'rail-btn-attendance'].forEach(id => {
       const btn = document.getElementById(id);
       if (!btn) return;
       btn.addEventListener('click', () => {
@@ -6103,7 +6193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // ── Docked Filter Buttons (expanded view) ──
-    ['dock-btn-notice', 'dock-btn-tutorial', 'dock-btn-attendance'].forEach(id => {
+    ['dock-btn-notice', 'dock-btn-tutorial', 'dock-btn-test', 'dock-btn-attendance'].forEach(id => {
       const btn = document.getElementById(id);
       if (!btn) return;
       btn.addEventListener('click', () => {
@@ -6235,11 +6325,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function getMiniCalEvents() {
-    // Build a map of dateKey -> {ann: n, tutorial: n, att: n} from real data
+    // Build a map of dateKey -> {ann: n, tutorial: n, test: n, att: n} from real data
     const map = new Map();
     const addEvent = (key, type) => {
       if (!key) return;
-      if (!map.has(key)) map.set(key, { ann: 0, tutorial: 0, att: 0 });
+      if (!map.has(key)) map.set(key, { ann: 0, tutorial: 0, test: 0, att: 0 });
       map.get(key)[type]++;
     };
 
@@ -6257,7 +6347,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    const todayKey = formatDateKey(new Date());
     assignmentsData.forEach(assign => {
       if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
       if (activeCourse && !isActivityForCourse(assign, activeCourse)) return;
@@ -6265,10 +6354,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(assign, new Date()) : assign.dueDate;
       const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
       if (d && !isNaN(d.getTime())) {
-        addEvent(formatDateKey(d), 'tutorial');
-      } else if (!assign.isSubmitted && !assign.isOverdue) {
-        // Open tasks with no deadline appear on Today
-        addEvent(todayKey, 'tutorial');
+        const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
+        addEvent(formatDateKey(d), isTest ? 'test' : 'tutorial');
       }
     });
 
@@ -6412,9 +6499,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const today = formatDateKey(new Date());
     const isToday = dateKey === today;
     const isSelected = dateKey === miniCalSelectedDateKey;
-    const events = eventsMap.get(dateKey) || { ann: 0, tutorial: 0, att: 0 };
-    const hasEvents = events.ann > 0 || events.tutorial > 0 || events.att > 0;
-    const totalCount = events.ann + events.tutorial + events.att;
+    const events = eventsMap.get(dateKey) || { ann: 0, tutorial: 0, test: 0, att: 0 };
+    const hasEvents = events.ann > 0 || events.tutorial > 0 || (events.test > 0) || events.att > 0;
+    const totalCount = events.ann + events.tutorial + (events.test || 0) + events.att;
 
     let cellClass = 'mini-cal-day-cell';
     if (isAdjacent) cellClass += ' adjacent-month';
@@ -6427,6 +6514,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         let dots = '';
         if (events.ann > 0) dots += `<span class="cell-dot dot-notice"></span>`;
         if (events.tutorial > 0) dots += `<span class="cell-dot dot-tutorial"></span>`;
+        if (events.test > 0) dots += `<span class="cell-dot dot-test"></span>`;
         if (events.att > 0) dots += `<span class="cell-dot dot-attendance"></span>`;
         indicatorHtml = `<div class="cell-dots-wrap">${dots}</div>`;
       } else {
@@ -6449,8 +6537,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const eventsMap = getMiniCalEvents();
-    const events = eventsMap.get(miniCalSelectedDateKey) || { ann: 0, tutorial: 0, att: 0 };
-    const total = events.ann + events.tutorial + events.att;
+    const events = eventsMap.get(miniCalSelectedDateKey) || { ann: 0, tutorial: 0, test: 0, att: 0 };
+    const total = events.ann + events.tutorial + (events.test || 0) + events.att;
     const parts = miniCalSelectedDateKey.split('-').map(Number);
     const d = new Date(parts[0], parts[1] - 1, parts[2]);
     const monthNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
@@ -6486,9 +6574,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         (selectedCourseFilterCode && c.courseCode === selectedCourseFilterCode)
       ) : null;
 
-      // Activity type toggles (Notices, Tutorials, Attendance)
+      // Activity type toggles (Notices, Tutorials, Tests, Attendance)
       const showNotice = isActivityActive('notice');
       const showTasks = isActivityActive('tutorial');
+      const showTests = isActivityActive('test');
       const showAtt = isActivityActive('attendance');
 
       // 1. Notices for this date
@@ -6497,19 +6586,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return !isNaN(d.getTime()) && formatDateKey(d) === dateKey;
       }) : [];
 
-      // 2. Assignments due on this date (including open pending tasks with no deadline on Today)
-      const todayKey = formatDateKey(new Date());
-      const isTargetToday = (dateKey === todayKey);
-      let allAssigns = showTasks ? assignmentsData.filter(a => {
+      // 2. Assignments & Tests due on this date (Strictly match dateKey, NEVER pull in undated items)
+      let allAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
         if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
+        const isTest = isTestActivity(a);
+        if (isTest && !showTests) return false;
+        if (!isTest && !showTasks) return false;
         const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(a, new Date()) : a.dueDate;
         const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
         const isValidDate = d && !isNaN(d.getTime());
         if (isValidDate) {
           return formatDateKey(d) === dateKey;
         }
-        const isPending = !a.isSubmitted && !a.isOverdue;
-        return isPending && isTargetToday;
+        return false;
       }) : [];
 
       // 3. Attendance sessions on this date (deduplicated by course and time window)
@@ -6692,22 +6781,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function syncRailCounts() {
-    let annCount = 0;
-    let assignCount = 0;
-    let attCount = 0;
-
     const courses = getPopupCoursesList();
     const activeCourse = (selectedCourseFilterId || selectedCourseFilterCode) ? courses.find(c => 
       (selectedCourseFilterId && String(c.courseId) === String(selectedCourseFilterId)) ||
       (selectedCourseFilterCode && c.courseCode === selectedCourseFilterCode)
     ) : null;
 
+    let annCount = 0;
+    let assignCount = 0;
+    let testCount = 0;
+    let attCount = 0;
+
     if (popupSidebarMode === 'courses' && activeCourse) {
       annCount = (typeof announcementsData !== 'undefined') ? announcementsData.filter(a => isActivityForCourse(a, activeCourse)).length : 0;
-      assignCount = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
+      const cAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
         if (!isActivityForCourse(a, activeCourse)) return false;
         return (typeof isAssignmentMatchingOcc === 'function') ? isAssignmentMatchingOcc(a, activeCourse.userOcc) : true;
-      }).length : 0;
+      }) : [];
+      assignCount = cAssigns.filter(a => !isTestActivity(a)).length;
+      testCount = cAssigns.filter(a => isTestActivity(a)).length;
       attCount = (typeof attendancesData !== 'undefined') ? attendancesData.filter(a => {
         if (typeof isAttendanceHidden === 'function' && isAttendanceHidden(a)) return false;
         return isActivityForCourse(a, activeCourse);
@@ -6719,17 +6811,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const d = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp || 0);
         return !isNaN(d.getTime()) && formatDateKey(d) === targetDateKey;
       }) : [];
-      const todayKey = formatDateKey(new Date());
-      const isTargetToday = (targetDateKey === todayKey);
       let dAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
         const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(a, new Date()) : a.dueDate;
         const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
         const isValidDate = d && !isNaN(d.getTime());
         if (isValidDate) {
           return formatDateKey(d) === targetDateKey;
         }
-        const isPending = !a.isSubmitted && !a.isOverdue;
-        return isPending && isTargetToday;
+        return false;
       }) : [];
       const seenRailAttSigs = new Set();
       if (typeof attendancesData !== 'undefined') {
@@ -6757,24 +6847,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       annCount = dAnns.length;
-      assignCount = dAssigns.length;
+      assignCount = dAssigns.filter(a => !isTestActivity(a)).length;
+      testCount = dAssigns.filter(a => isTestActivity(a)).length;
       attCount = seenRailAttSigs.size;
     } else {
       annCount = (typeof announcementsData !== 'undefined') ? announcementsData.length : 0;
-      assignCount = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => !isAssignmentHidden(a)).length : 0;
+      const allActive = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => !isAssignmentHidden(a)) : [];
+      assignCount = allActive.filter(a => !isTestActivity(a)).length;
+      testCount = allActive.filter(a => isTestActivity(a)).length;
       attCount = (typeof attendancesData !== 'undefined') ? attendancesData.filter(a => a.activeSession).length || attendancesData.length : 0;
     }
 
     ['rail-count-ann', 'dock-count-ann'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = annCount; });
     ['rail-count-assign', 'dock-count-assign'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = assignCount; });
+    ['rail-count-test', 'dock-count-test'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = testCount; });
     ['rail-count-att', 'dock-count-att'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = attCount; });
 
     // Update tooltips
     const dnBtn = document.getElementById('dock-btn-notice');
     const dtBtn = document.getElementById('dock-btn-tutorial');
+    const dtestBtn = document.getElementById('dock-btn-test');
     const daBtn = document.getElementById('dock-btn-attendance');
     if (dnBtn) dnBtn.dataset.tooltip = '[ Notices (' + annCount + ') ]';
     if (dtBtn) dtBtn.dataset.tooltip = '[ Tutorials (' + assignCount + ') ]';
+    if (dtestBtn) dtestBtn.dataset.tooltip = '[ Tests (' + testCount + ') ]';
     if (daBtn) daBtn.dataset.tooltip = '[ Attendance (' + attCount + ') ]';
 
     // Re-render mini-calendar if expanded to pick up new events
@@ -7003,13 +7099,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.classList.toggle('active', btn.dataset.sub === subId);
     });
 
+    const testsListEl = document.getElementById('tests-list');
     if (announcementsListEl) announcementsListEl.style.display = (subId === 'sub-announcements') ? 'flex' : 'none';
     if (assignmentsListEl) assignmentsListEl.style.display = (subId === 'sub-assignments') ? 'flex' : 'none';
+    if (testsListEl) testsListEl.style.display = (subId === 'sub-tests') ? 'flex' : 'none';
     if (attendanceListEl) attendanceListEl.style.display = (subId === 'sub-attendance') ? 'flex' : 'none';
     if (attendanceFilterBarEl) attendanceFilterBarEl.style.display = (subId === 'sub-attendance') ? 'block' : 'none';
 
     if (subId === 'sub-announcements') renderAnnouncementsList();
     else if (subId === 'sub-assignments') renderAssignmentsList();
+    else if (subId === 'sub-tests') renderTestsList();
     else if (subId === 'sub-attendance') {
       populateAttendanceCourseFilterOptions();
       renderAttendanceList();
@@ -7854,8 +7953,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const filtered = [];
     list.forEach(a => {
+      // 1. Filter out non-assessment resources (lecture notes, examples, external drawing tools, videos)
+      if (typeof isNonAssessmentItem === 'function' && isNonAssessmentItem(a)) {
+        logDiag('Sanitize:Assign', `⏭ Filtered out non-assessment resource: "${a.title}"`);
+        return;
+      }
+
       const resolved = resolveAssignmentDate(a, now);
-      // Filter out stale assignments/quizzes from prior semesters (e.g. > 120 days old or prior academic session)
+      // Filter out stale assignments/quizzes from prior semesters (e.g. > 90 days old or prior academic session)
       if (isStaleFn && isStaleFn(resolved, a.title, now, a.courseName)) {
         logDiag('Sanitize:Assign', `⏭ Filtered out stale past-semester activity: "${a.title}"`);
         return;
@@ -9832,7 +9937,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderAssignmentsList() {
     if (!assignmentsListEl) return;
 
-    let filtered = assignmentsData.filter(a => !isAssignmentHidden(a));
+    let filtered = assignmentsData.filter(a => !isAssignmentHidden(a) && !isTestActivity(a));
     const hiddenCount = (typeof getUniqueHiddenAssignmentCount === 'function') 
       ? getUniqueHiddenAssignmentCount() 
       : ((hiddenAssignmentIds && hiddenAssignmentIds.length) || 0);
@@ -9950,6 +10055,116 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderAssignmentCardHtml(assign) {
     const vm = computeAssignmentCardViewModel(assign);
     return renderUnifiedAssignmentCardHtml(vm);
+  }
+
+  // ========================================================
+  // 8B. Render Tests / Quizzes / Exams
+  // ========================================================
+  function renderTestsList() {
+    const testsListEl = document.getElementById('tests-list');
+    if (!testsListEl) return;
+
+    let filtered = assignmentsData.filter(a => !isAssignmentHidden(a) && isTestActivity(a));
+    const hiddenCount = (typeof getUniqueHiddenAssignmentCount === 'function') 
+      ? getUniqueHiddenAssignmentCount() 
+      : ((hiddenAssignmentIds && hiddenAssignmentIds.length) || 0);
+    const restoreBarHtml = hiddenCount > 0 ? `
+      <div class="assign-hidden-restore-bar">
+        <button type="button" id="btn-restore-assignments-pill" class="assign-hidden-restore-btn" title="Click to restore excluded assessments">
+          ↺ ${hiddenCount} Excluded Activity${hiddenCount > 1 ? 's' : ''} (Restore All)
+        </button>
+      </div>
+    ` : '';
+
+    // Filter pill selection
+    if (currentAssignFilter === 'pending') {
+      filtered = filtered.filter(a => !a.isSubmitted && !a.isOverdue);
+    } else if (currentAssignFilter === 'due-soon') {
+      filtered = filtered.filter(a => a.isDueSoon);
+    } else if (currentAssignFilter === 'submitted') {
+      filtered = filtered.filter(a => a.isSubmitted);
+    } else if (currentAssignFilter === 'overdue') {
+      filtered = filtered.filter(a => a.isOverdue);
+    }
+
+    // Search filter
+    const searchTerm = (activitiesSearchInput && activitiesSearchInput.value.trim().toLowerCase()) || '';
+    if (searchTerm) {
+      filtered = filtered.filter(a =>
+        (a.title && a.title.toLowerCase().includes(searchTerm)) ||
+        (a.courseCode && a.courseCode.toLowerCase().includes(searchTerm)) ||
+        (a.courseName && a.courseName.toLowerCase().includes(searchTerm))
+      );
+    }
+
+    logDiag('Tests:List', `Rendered ${filtered.length} tests/quizzes in mode "${currentActivitiesMode}" (Total tests: ${assignmentsData.filter(a => isTestActivity(a)).length})`);
+
+    if (filtered.length === 0) {
+      testsListEl.innerHTML = `
+        <div style="text-align:center;padding:32px 16px;color:var(--text-muted);">
+          <p style="font-size:14px;margin-bottom:6px;">📝 No tests or quizzes found</p>
+          <p style="font-size:11.5px;">No active quizzes or midterms scheduled right now.</p>
+          ${restoreBarHtml}
+        </div>
+      `;
+      return;
+    }
+
+    if (currentActivitiesMode === 'bycourse') {
+      const courseMap = new Map();
+      filtered.forEach(assign => {
+        const cid = assign.courseId || 'general';
+        if (!courseMap.has(cid)) {
+          courseMap.set(cid, {
+            courseCode: assign.courseCode,
+            courseName: assign.courseName,
+            items: []
+          });
+        }
+        courseMap.get(cid).items.push(assign);
+      });
+
+      const sortedCourseEntries = Array.from(courseMap.entries()).map(([cid, group]) => {
+        group.items = sortAssignments(group.items, currentSortOrder);
+        return [cid, group];
+      });
+
+      sortedCourseEntries.sort((a, b) => {
+        const itemA = a[1].items[0];
+        const itemB = b[1].items[0];
+        const tA = itemA ? getItemTimestamp(itemA, 'assignment') : 0;
+        const tB = itemB ? getItemTimestamp(itemB, 'assignment') : 0;
+        return (currentSortOrder === 'newest') ? (tB - tA) : (tA - tB);
+      });
+
+      testsListEl.innerHTML = sortedCourseEntries.map(([cid, group]) => {
+        return `
+          <div class="course-group-card expanded">
+            <div class="course-group-header">
+              <div class="course-group-info">
+                <span class="course-group-code">${escapeHtml(group.courseCode || 'Course')}</span>
+                ${cleanDisplayCourseName(group.courseName, group.courseCode) ? `<span class="course-group-title">${escapeHtml(cleanDisplayCourseName(group.courseName, group.courseCode))}</span>` : ''}
+              </div>
+              <div class="course-group-meta">
+                <span class="badge-count">${group.items.length} tests</span>
+                <span class="course-group-chevron">▼</span>
+              </div>
+            </div>
+            <div class="course-group-body">
+              ${group.items.map(assign => renderAssignmentCardHtml(assign)).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      attachCourseGroupToggle(testsListEl);
+      if (restoreBarHtml) {
+        testsListEl.insertAdjacentHTML('beforeend', restoreBarHtml);
+      }
+    } else {
+      const sorted = sortAssignments(filtered, currentSortOrder);
+      testsListEl.innerHTML = sorted.map(assign => renderAssignmentCardHtml(assign)).join('') + restoreBarHtml;
+    }
   }
 
   // ========================================================
@@ -11060,12 +11275,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const todayKey = formatDateKey(now);
     const isTargetToday = (targetDateKey === todayKey);
 
-    // 1. Assignments
-    if (showTasks) {
+    // 1. Assignments & Tests
+    if (showTasks || isActivityActive('test')) {
+      const showTestsActive = isActivityActive('test');
       assignmentsData.forEach(assign => {
         if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
+        const isTest = isTestActivity(assign);
+        if (isTest && !showTestsActive) return;
+        if (!isTest && !showTasks) return;
         const d = resolveAssignmentDate(assign, now);
-        const isPending = !assign.isSubmitted && !assign.isOverdue;
         const isValidDate = d && !isNaN(d.getTime());
 
         if (isValidDate) {
@@ -11073,34 +11291,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           const key = formatDateKey(d);
           if (key === targetDateKey) {
             events.push({
-              type: 'task',
+              type: isTest ? 'test' : 'task',
               id: assign.id,
               title: assign.title,
               courseCode: assign.courseCode || assign.courseName || 'Task',
               courseName: assign.courseName || '',
               status: assign.isSubmitted ? 'submitted' : (assign.isOverdue ? 'overdue' : (assign.isDueSoon ? 'duesoon' : 'upcoming')),
-              badgeLabel: assign.badgeLabel || 'Assignment',
+              badgeLabel: assign.badgeLabel || (isTest ? 'Test' : 'Assignment'),
               date: d,
               dateKey: key,
               url: assign.url,
               obj: assign
             });
           }
-        } else if (isPending && isTargetToday) {
-          // Open task with no deadline appears on Today so it's actionable
-          events.push({
-            type: 'task',
-            id: assign.id,
-            title: assign.title,
-            courseCode: assign.courseCode || assign.courseName || 'Task',
-            courseName: assign.courseName || '',
-            status: 'upcoming',
-            badgeLabel: '⏳ Open Task',
-            date: now,
-            dateKey: todayKey,
-            url: assign.url,
-            obj: assign
-          });
         }
       });
     }
@@ -12896,8 +13099,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    const countSubTest = document.getElementById('count-sub-test');
     if (countSubAnn) countSubAnn.textContent = annCount;
-    if (countSubAssign) countSubAssign.textContent = visibleAssigns.length;
+    if (countSubAssign) countSubAssign.textContent = visibleAssigns.filter(a => !isTestActivity(a)).length;
+    if (countSubTest) countSubTest.textContent = visibleAssigns.filter(a => isTestActivity(a)).length;
     if (countSubAtt) {
       countSubAtt.textContent = activeAttCount > 0 
         ? `${activeAttCount} Open` 

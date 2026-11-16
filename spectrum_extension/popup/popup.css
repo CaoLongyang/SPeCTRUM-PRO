@@ -103,6 +103,12 @@
   --signal-assignment-bar: #ea580c;  /* 3px 橙色重点指示条 */
   --signal-assignment-border: rgba(234, 88, 12, 0.35);
 
+  --signal-test: #6366f1;            /* 测验/考试指示条 (靛蓝/紫罗兰) */
+  --signal-test-bg: #eef2ff;         /* 测验背景 (浅靛蓝) */
+  --signal-test-text: #4338ca;       /* 测验状态标签文本 (深靛蓝) */
+  --signal-test-bar: #6366f1;        /* 3px 纯净靛蓝重点指示条 */
+  --signal-test-border: rgba(99, 102, 241, 0.35);
+
   --signal-notice: #0284c7;          /* 钴蓝指示条 */
   --signal-notice-bg: #f0f9ff;       /* 通知胶囊背景 (浅天蓝) */
   --signal-notice-text: #0369a1;     /* 通知标题/图标文本 (深蓝) */
@@ -237,6 +243,13 @@ body[data-theme="dark"],
   --signal-notice-bar: #38bdf8;                        /* 左侧重点指示条：3px 纯净蓝色锚条 */
   --signal-notice-border: rgba(56, 189, 248, 0.20);
 
+  /* 4.4 测验与考试 (Test / Quizzes · 靛蓝/紫罗兰) */
+  --signal-test: #818cf8;                               /* 测验与考试文本：靛蓝 400 (高辨识度) */
+  --signal-test-bg: rgba(129, 140, 248, 0.12);         /* 测验背景：12% 柔和靛蓝底色 */
+  --signal-test-text: #a5b4fc;
+  --signal-test-bar: #818cf8;                           /* 左侧重点指示条：3px 纯净靛蓝锚条 */
+  --signal-test-border: rgba(129, 140, 248, 0.25);
+
   /* --------------------------------------------------------------------------
      5. 交互控件与行为权重 (Action & Button Tokens)
      -------------------------------------------------------------------------- */
@@ -285,6 +298,14 @@ html, body {
 
 .icon-assignment {
   color: var(--signal-assignment) !important;
+}
+
+.icon-test {
+  color: var(--signal-test, #6366f1) !important;
+}
+
+.legend-dot.dot-test {
+  background: var(--signal-test, #6366f1) !important;
 }
 
 .icon-attendance {
@@ -1948,6 +1969,10 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
   background: #F97316;
 }
 
+.dot-test {
+  background: #6366F1;
+}
+
 .dot-attendance {
   background: #10B981;
 }
@@ -2504,6 +2529,21 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
   color: #FFFFFF !important;
 }
 
+/* 3. Test / Exam Button */
+.dock-filter-btn#dock-btn-test.active {
+  background: #EEF2FF !important;
+  border: 1.5px solid #6366F1 !important;
+}
+.dock-filter-btn#dock-btn-test.active .icon-svg {
+  color: #6366F1 !important;
+  stroke: #6366F1 !important;
+}
+.dock-filter-btn#dock-btn-test .dock-badge,
+.dock-badge.badge-test {
+  background: #6366F1 !important;
+  color: #FFFFFF !important;
+}
+
 /* 3. Attendance Button */
 .dock-filter-btn#dock-btn-attendance.active {
   background: #ECFDF5 !important;
@@ -2655,6 +2695,10 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
 [data-theme="dark"] .dock-filter-btn#dock-btn-tutorial.active {
   background: rgba(249, 115, 22, 0.18) !important;
   border-color: #FB923C !important;
+}
+[data-theme="dark"] .dock-filter-btn#dock-btn-test.active {
+  background: rgba(99, 102, 241, 0.18) !important;
+  border-color: #818CF8 !important;
 }
 [data-theme="dark"] .dock-filter-btn#dock-btn-attendance.active {
   background: rgba(16, 185, 129, 0.18) !important;
@@ -3941,6 +3985,11 @@ body.mode-list #btn-cal-next {
 .rail-toggle-pill[data-filter="assignment"] {
   border-color: var(--signal-assignment);
   color: var(--signal-assignment);
+}
+
+.rail-toggle-pill[data-filter="test"] {
+  border-color: var(--signal-test, #6366f1);
+  color: var(--signal-test, #6366f1);
 }
 
 .rail-toggle-pill[data-filter="attendance"] {
@@ -10107,6 +10156,48 @@ body:not(.is-full-tab) .att-card-aside {
   fill: var(--signal-attendance, #10B981) !important;
   stroke: none !important;
   color: var(--signal-attendance, #10B981) !important;
+}
+
+/* 4. Test / Exam: Indigo Examination Sheet with Angled Pencil */
+.icon-box-test {
+  background: var(--signal-test-bg, #EEF2FF);
+  border: 1px solid var(--signal-test-border, rgba(99, 102, 241, 0.25));
+  color: var(--signal-test, #6366F1);
+}
+
+.icon-box-test .icon-svg {
+  stroke: var(--signal-test, #6366F1) !important;
+  color: var(--signal-test, #6366F1) !important;
+}
+
+.icon-box-test.is-overdue {
+  background: var(--signal-urgent-bg, #FFF1F2) !important;
+  border-color: rgba(225, 29, 72, 0.25) !important;
+  color: #E11D48 !important;
+}
+
+.icon-box-test.is-overdue .icon-svg {
+  stroke: #E11D48 !important;
+  color: #E11D48 !important;
+}
+
+.icon-box-test.is-submitted {
+  background: var(--signal-attendance-bg, #ECFDF5) !important;
+  border-color: rgba(16, 185, 129, 0.25) !important;
+  color: #10B981 !important;
+}
+
+.icon-box-test.is-submitted .icon-svg {
+  stroke: #10B981 !important;
+  color: #10B981 !important;
+}
+
+.scoped-card.scoped-card-test {
+  border-left: 3.5px solid var(--signal-test, #6366F1) !important;
+}
+
+[data-theme="dark"] .scoped-card.scoped-card-test {
+  border-left-color: var(--signal-test-bar, #818CF8) !important;
 }
 
 .card-content-wrap {
