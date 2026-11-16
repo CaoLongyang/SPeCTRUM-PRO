@@ -1328,8 +1328,41 @@ function parseAttendanceSummaryStats(doc, html = '', sessions = []) {
   const percentageOverAllVal = percentageOverAll ? parseFloat(percentageOverAll) : null;
   const maxPercentageVal = maxPercentage ? parseFloat(maxPercentage) : null;
 
+  let passedSessions = takenSessions != null ? takenSessions : 0;
+  let attendedSessions = null;
+
+  if (Array.isArray(sessions) && sessions.length > 0) {
+    const now = new Date();
+    const past = sessions.filter(s => !s.isFuture && s.date && new Date(s.date).getTime() <= now.getTime());
+    const attended = past.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || ''));
+    if (attended.length > 0 || past.length > 0) {
+      attendedSessions = attended.length;
+      if (passedSessions === 0 && past.length > 0) {
+        passedSessions = past.length;
+      }
+    }
+  }
+
+  if (attendedSessions == null && pointsOverTaken) {
+    const m = pointsOverTaken.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+    if (m) {
+      const earned = parseFloat(m[1]);
+      attendedSessions = Math.round(earned / 2);
+    }
+  }
+
+  if (attendedSessions == null && percentageOverTakenVal != null && passedSessions > 0) {
+    attendedSessions = Math.round((percentageOverTakenVal / 100) * passedSessions);
+  }
+
+  if (attendedSessions == null) {
+    attendedSessions = passedSessions;
+  }
+
   return {
     takenSessions,
+    passedSessions,
+    attendedSessions,
     pointsOverTaken,
     percentageOverTaken,
     percentageOverTakenVal,
@@ -1863,7 +1896,8 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
         percentage: summaryStats.percentageOverAllVal != null ? String(summaryStats.percentageOverAllVal) : (summaryStats.percentageOverTakenVal != null ? String(summaryStats.percentageOverTakenVal) : ''),
         takenPercentage: summaryStats.percentageOverTaken || '',
         overallPercentage: summaryStats.percentageOverAll || '',
-        attended: summaryStats.takenSessions != null ? String(summaryStats.takenSessions) : '',
+        attended: summaryStats.attendedSessions != null ? String(summaryStats.attendedSessions) : (summaryStats.takenSessions != null ? String(summaryStats.takenSessions) : ''),
+        passed: summaryStats.passedSessions != null ? String(summaryStats.passedSessions) : (summaryStats.takenSessions != null ? String(summaryStats.takenSessions) : ''),
         total: summaryStats.totalSessions != null ? String(summaryStats.totalSessions) : '',
         pointsOverTaken: summaryStats.pointsOverTaken || '',
         pointsOverAll: summaryStats.pointsOverAll || '',
@@ -1917,7 +1951,8 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
           percentage: summaryStatsLec.percentageOverAllVal != null ? String(summaryStatsLec.percentageOverAllVal) : (summaryStats?.percentageOverAllVal != null ? String(summaryStats.percentageOverAllVal) : ''),
           takenPercentage: summaryStatsLec.percentageOverTaken || summaryStats?.percentageOverTaken || '',
           overallPercentage: summaryStatsLec.percentageOverAll || summaryStats?.percentageOverAll || '',
-          attended: summaryStatsLec.takenSessions != null ? String(summaryStatsLec.takenSessions) : '',
+          attended: summaryStatsLec.attendedSessions != null ? String(summaryStatsLec.attendedSessions) : (summaryStatsLec.takenSessions != null ? String(summaryStatsLec.takenSessions) : ''),
+          passed: summaryStatsLec.passedSessions != null ? String(summaryStatsLec.passedSessions) : (summaryStatsLec.takenSessions != null ? String(summaryStatsLec.takenSessions) : ''),
           total: summaryStatsLec.totalSessions != null ? String(summaryStatsLec.totalSessions) : '',
           pointsOverTaken: summaryStatsLec.pointsOverTaken || '',
           pointsOverAll: summaryStatsLec.pointsOverAll || '',
@@ -1948,7 +1983,8 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
           percentage: summaryStatsTut.percentageOverAllVal != null ? String(summaryStatsTut.percentageOverAllVal) : (summaryStats?.percentageOverAllVal != null ? String(summaryStats.percentageOverAllVal) : ''),
           takenPercentage: summaryStatsTut.percentageOverTaken || summaryStats?.percentageOverTaken || '',
           overallPercentage: summaryStatsTut.percentageOverAll || summaryStats?.percentageOverAll || '',
-          attended: summaryStatsTut.takenSessions != null ? String(summaryStatsTut.takenSessions) : '',
+          attended: summaryStatsTut.attendedSessions != null ? String(summaryStatsTut.attendedSessions) : (summaryStatsTut.takenSessions != null ? String(summaryStatsTut.takenSessions) : ''),
+          passed: summaryStatsTut.passedSessions != null ? String(summaryStatsTut.passedSessions) : (summaryStatsTut.takenSessions != null ? String(summaryStatsTut.takenSessions) : ''),
           total: summaryStatsTut.totalSessions != null ? String(summaryStatsTut.totalSessions) : '',
           pointsOverTaken: summaryStatsTut.pointsOverTaken || '',
           pointsOverAll: summaryStatsTut.pointsOverAll || '',

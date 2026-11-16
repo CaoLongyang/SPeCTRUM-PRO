@@ -4363,6 +4363,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     return {
       takenSessions: takenCount,
+      passedSessions: takenCount,
+      attendedSessions: attendedCount,
       pointsOverTaken: `${takenPts} / ${takenMaxPts}`,
       percentageOverTaken: pctOverTaken,
       percentageOverTakenVal: parseFloat(pctOverTaken),
@@ -4641,8 +4643,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       percentageOverAllVal: parseFloat(att.pastStats.overallPercentage || att.pastStats.percentage || 0),
       percentageOverTaken: att.pastStats.takenPercentage || (att.pastStats.percentage ? att.pastStats.percentage + '%' : ''),
       percentageOverTakenVal: parseFloat(att.pastStats.takenPercentage || att.pastStats.percentage || 0),
-      pointsOverTaken: att.pastStats.pointsOverTaken || (att.pastStats.attended && att.pastStats.total ? `${att.pastStats.attended} / ${att.pastStats.total}` : ''),
+      pointsOverTaken: att.pastStats.pointsOverTaken || '',
       pointsOverAll: att.pastStats.pointsOverAll || '',
+      attendedSessions: att.pastStats.attended ? parseInt(att.pastStats.attended, 10) : null,
+      passedSessions: att.pastStats.passed ? parseInt(att.pastStats.passed, 10) : (att.pastStats.attended ? parseInt(att.pastStats.attended, 10) : null),
       takenSessions: att.pastStats.attended ? parseInt(att.pastStats.attended, 10) : null,
       totalSessions: att.pastStats.total ? parseInt(att.pastStats.total, 10) : null,
       maxPercentage: att.pastStats.maxPercentage || '100.0%',
@@ -4650,58 +4654,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     } : null) || computeFallbackStatsFromSessions(att.sessions);
 
     let rateBadgeHtml = '';
-    let summaryStatsHtml = '';
 
     if (stats && (stats.percentageOverAll || stats.percentageOverTaken)) {
-      const allPct = stats.percentageOverAll || '0.0%';
-      const takenPct = stats.percentageOverTaken || '100.0%';
-      const ptsOverAll = stats.pointsOverAll || '';
-      const ptsOverTaken = stats.pointsOverTaken || '';
+      const allPct = (stats.percentageOverAll || '0.0%').replace(/\.0%$/, '%');
+      const takenPct = (stats.percentageOverTaken || '100.0%').replace(/\.0%$/, '%');
       const totalSess = stats.totalSessions || (att.sessions ? att.sessions.length : 0);
-      const takenSess = stats.takenSessions || 0;
-      const maxPct = stats.maxPercentage || '100.0%';
-      const maxPts = stats.maxPoints || '';
+      const passedSess = stats.passedSessions != null ? stats.passedSessions : (stats.takenSessions || 0);
+      let attendedSess = stats.attendedSessions;
+      if (attendedSess == null) {
+        if (stats.percentageOverTakenVal != null && passedSess > 0) {
+          attendedSess = Math.round((stats.percentageOverTakenVal / 100) * passedSess);
+        } else {
+          attendedSess = passedSess;
+        }
+      }
 
       const takenVal = stats.percentageOverTakenVal != null ? stats.percentageOverTakenVal : parseFloat(takenPct);
       let toneClass = 'tone-good';
       if (takenVal < 70) toneClass = 'tone-danger';
       else if (takenVal < 80) toneClass = 'tone-warn';
 
-      const tooltipText = `Attendance Summary (from view=5):\n• Overall Semester: ${allPct} (${ptsOverAll || 'N/A'}${totalSess ? ` · ${totalSess} sessions` : ''})\n• Taken Sessions: ${takenPct} (${ptsOverTaken || 'N/A'}${takenSess ? ` · ${takenSess} sessions` : ''})\n• Max Attainable: ${maxPct} (${maxPts || 'N/A'})`;
+      const tooltipText = `Attendance Summary:\n• Attended: ${attendedSess} / ${passedSess} passed (${takenPct})\n• Overall Semester: ${allPct} (${totalSess} total sessions)`;
 
       rateBadgeHtml = `
         <div class="att-rate-badge ${toneClass}" title="${escapeHtml(tooltipText)}">
-          <span class="att-rate-all"><span class="att-rate-num">${escapeHtml(allPct)}</span> <span class="att-rate-lbl">All</span></span>
-          <span class="att-rate-sep">/</span>
-          <span class="att-rate-taken"><span class="att-rate-num">${escapeHtml(takenPct)}</span> <span class="att-rate-lbl">Taken</span></span>
-        </div>
-      `;
-
-      summaryStatsHtml = `
-        <div class="att-stats-strip" title="${escapeHtml(tooltipText)}">
-          <div class="att-stat-cell stat-cell-overall">
-            <span class="att-stat-label">${t('cards', 'semesterRate', 'Semester Rate')}</span>
-            <div class="att-stat-value-group">
-              <span class="att-stat-value highlight">${escapeHtml(allPct)}</span>
-              ${ptsOverAll ? `<span class="att-stat-sub">(${escapeHtml(ptsOverAll)} pts)</span>` : ''}
-            </div>
-          </div>
-          <div class="att-stat-divider"></div>
-          <div class="att-stat-cell stat-cell-taken">
-            <span class="att-stat-label">${t('cards', 'takenSessions', 'Taken')} (${takenSess}/${totalSess || '–'})</span>
-            <div class="att-stat-value-group">
-              <span class="att-stat-value ${toneClass}">${escapeHtml(takenPct)}</span>
-              ${ptsOverTaken ? `<span class="att-stat-sub">(${escapeHtml(ptsOverTaken)} pts)</span>` : ''}
-            </div>
-          </div>
-          <div class="att-stat-divider"></div>
-          <div class="att-stat-cell stat-cell-max">
-            <span class="att-stat-label">${t('cards', 'maxAttainable', 'Max Attainable')}</span>
-            <div class="att-stat-value-group">
-              <span class="att-stat-value">${escapeHtml(maxPct)}</span>
-              ${maxPts ? `<span class="att-stat-sub">(${escapeHtml(maxPts)})</span>` : ''}
-            </div>
-          </div>
+          <span class="att-rate-primary">${escapeHtml(takenPct)} (${attendedSess}/${passedSess})</span>
+          <span class="att-rate-sep">·</span>
+          <span class="att-rate-secondary">${escapeHtml(allPct)} of ${totalSess}</span>
         </div>
       `;
     }
@@ -4712,7 +4691,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       statusPillHtml,
       stateBadgeHtml,
       rateBadgeHtml,
-      summaryStatsHtml,
       code,
       cleanName,
       occNum,
@@ -4754,7 +4732,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               ${vm.statusPillHtml}
             </div>
           </div>
-          ${vm.summaryStatsHtml || ''}
           <div class="att-row-action">
             <div class="att-progress-section">
               <div class="att-progress-header">
@@ -9979,10 +9956,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         const courseStats = group.items.find(a => a.summaryStats)?.summaryStats || (typeof computeFallbackStatsFromSessions === 'function' ? computeFallbackStatsFromSessions(group.items.flatMap(a => a.sessions || [])) : null);
         let courseRateBadgeHtml = '';
         if (courseStats && (courseStats.percentageOverAll || courseStats.percentageOverTaken)) {
-          const allPct = courseStats.percentageOverAll || '0.0%';
-          const takenPct = courseStats.percentageOverTaken || '100.0%';
-          const tooltip = `Course Attendance (view=5):\n• Overall Semester: ${allPct} (${courseStats.pointsOverAll || ''})\n• Taken Sessions: ${takenPct} (${courseStats.pointsOverTaken || ''})`;
-          courseRateBadgeHtml = `<span class="course-att-rate-badge" title="${escapeHtml(tooltip)}">${escapeHtml(allPct)} All · ${escapeHtml(takenPct)} Taken</span>`;
+          const allPct = (courseStats.percentageOverAll || '0.0%').replace(/\.0%$/, '%');
+          const takenPct = (courseStats.percentageOverTaken || '100.0%').replace(/\.0%$/, '%');
+          const totalSess = courseStats.totalSessions || (group.items ? group.items.flatMap(a => a.sessions || []).length : 0);
+          const passedSess = courseStats.passedSessions != null ? courseStats.passedSessions : (courseStats.takenSessions || 0);
+          let attendedSess = courseStats.attendedSessions;
+          if (attendedSess == null) {
+            if (courseStats.percentageOverTakenVal != null && passedSess > 0) {
+              attendedSess = Math.round((courseStats.percentageOverTakenVal / 100) * passedSess);
+            } else {
+              attendedSess = passedSess;
+            }
+          }
+
+          const takenVal = courseStats.percentageOverTakenVal != null ? courseStats.percentageOverTakenVal : parseFloat(takenPct);
+          let toneClass = 'tone-good';
+          if (takenVal < 70) toneClass = 'tone-danger';
+          else if (takenVal < 80) toneClass = 'tone-warn';
+
+          const tooltip = `Course Attendance:\n• Attended: ${attendedSess} / ${passedSess} passed (${takenPct})\n• Overall Semester: ${allPct} (${totalSess} total sessions)`;
+          courseRateBadgeHtml = `
+            <span class="course-att-rate-badge ${toneClass}" title="${escapeHtml(tooltip)}">
+              <span class="att-rate-primary">${escapeHtml(takenPct)} (${attendedSess}/${passedSess})</span>
+              <span class="att-rate-sep">·</span>
+              <span class="att-rate-secondary">${escapeHtml(allPct)} of ${totalSess}</span>
+            </span>
+          `;
         }
 
         return `
