@@ -1420,23 +1420,26 @@
     }
 
     const deletedCount = getDeletedSessionsCount();
-    const btnRestore = document.getElementById('btn-tt-restore-deleted');
-    if (btnRestore) {
+    if (countEl) {
       if (deletedCount > 0) {
-        btnRestore.style.display = 'inline-flex';
-        const restoreTpl = getTimetableText('timetable', 'restoreDeleted', '↺ {n} Hidden (Restore)');
-        btnRestore.textContent = restoreTpl.replace('{n}', deletedCount);
-        if (!btnRestore._hasRestoreListener) {
-          btnRestore._hasRestoreListener = true;
-          btnRestore.addEventListener('click', async () => {
-            const confirmTpl = getTimetableText('timetable', 'restoreConfirm', 'Restore {n} hidden/deleted class session(s) back to your timetable?');
-            const confirmMsg = confirmTpl.replace('{n}', deletedCount);
-            if (!confirm(confirmMsg)) return;
-            await restoreAllDeletedSessions();
+        countEl.title = `${deletedCount} class${deletedCount > 1 ? 'es' : ''} deleted. Click to restore or click '+ Add Class'.`;
+        countEl.style.cursor = 'pointer';
+        if (!countEl._hasRestoreClick) {
+          countEl._hasRestoreClick = true;
+          countEl.addEventListener('click', () => {
+            const currentDeleted = getDeletedSessionsCount();
+            if (currentDeleted > 0) {
+              const confirmTpl = getTimetableText('timetable', 'restoreConfirm', 'Restore {n} hidden/deleted class session(s) back to your timetable?');
+              const confirmMsg = confirmTpl.replace('{n}', currentDeleted);
+              if (confirm(confirmMsg)) {
+                restoreAllDeletedSessions();
+              }
+            }
           });
         }
       } else {
-        btnRestore.style.display = 'none';
+        countEl.title = '';
+        countEl.style.cursor = '';
       }
     }
 
@@ -1646,6 +1649,20 @@
 
     populateManualCourseChips(isEdit ? existingManual.courseCode : '');
     updateTimeDurationPreview('tt-manual-start', 'tt-manual-end', 'tt-manual-duration-preview');
+
+    const restoreWrap = document.getElementById('tt-restore-deleted-wrap');
+    const restoreDesc = document.getElementById('tt-restore-deleted-desc');
+    const deletedCountInModal = getDeletedSessionsCount();
+    if (restoreWrap) {
+      if (!isEdit && deletedCountInModal > 0) {
+        restoreWrap.style.display = 'block';
+        if (restoreDesc) {
+          restoreDesc.textContent = `${deletedCountInModal} default class${deletedCountInModal > 1 ? 'es' : ''} deleted from timetable.`;
+        }
+      } else {
+        restoreWrap.style.display = 'none';
+      }
+    }
 
     modal.style.display = 'flex';
     setTimeout(() => {
@@ -3043,6 +3060,18 @@
       addModal._hasManualModalListeners = true;
 
       const btnManualClose = document.getElementById('btn-close-tt-manual-modal');
+      const btnModalRestore = document.getElementById('btn-modal-restore-deleted');
+      if (btnModalRestore && !btnModalRestore._hasRestoreListener) {
+        btnModalRestore._hasRestoreListener = true;
+        btnModalRestore.addEventListener('click', async () => {
+          const currentDeleted = getDeletedSessionsCount();
+          const confirmTpl = getTimetableText('timetable', 'restoreConfirm', 'Restore {n} hidden/deleted class session(s) back to your timetable?');
+          const confirmMsg = confirmTpl.replace('{n}', currentDeleted);
+          if (!confirm(confirmMsg)) return;
+          closeManualSessionModal();
+          await restoreAllDeletedSessions();
+        });
+      }
       const btnManualCancel = document.getElementById('btn-cancel-tt-manual');
       const btnManualSave = document.getElementById('btn-save-tt-manual');
       const btnManualDelete = document.getElementById('btn-delete-tt-manual');

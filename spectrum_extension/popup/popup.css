@@ -10183,7 +10183,7 @@ body:not(.is-full-tab) .sync-cinematic-current {
   border-bottom: none;
   flex-shrink: 0;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   z-index: 20;
 }
 
@@ -10191,6 +10191,7 @@ body:not(.is-full-tab) .sync-cinematic-current {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-shrink: 0;
 }
 
 .timetable-brand-icon {
@@ -10270,20 +10271,11 @@ body:not(.is-full-tab) .sync-cinematic-current {
   color: var(--text-secondary);
 }
 
-.btn-tt-restore {
-  transition: all 0.15s ease;
-  user-select: none;
-}
-
-.btn-tt-restore:hover {
-  background: rgba(239, 68, 68, 0.18) !important;
-  border-color: #ef4444 !important;
-}
-
 .timetable-toolbar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .btn-timetable-export {
