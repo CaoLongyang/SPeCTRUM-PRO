@@ -59,6 +59,19 @@ let isScanningMaterials = false;
 let currentSyncAbortController = null;
 let syncStartTime = 0;
 let saveCacheTimeout = null;
+// Global sync, progress, and auth watcher state (prevents TDZ on early calls)
+let activitiesProgressHideTimer = null;
+let syncProgressCurrent = 0;
+let syncProgressTarget = 0;
+let syncProgressTicker = null;
+let syncProgressLatestText = { current: '', count: '', title: '' };
+let authWatcherTimer = null;
+let isWatchingForLogin = false;
+let isVerifyingLogin = false;
+let fullListCurrentDate = new Date();
+let fullListWheelCooldown = false;
+let hasSkippedOccSetup = false;
+let courseScope = 'active';
 
 // ── Internationalization (i18n) Engine ──
 // Supports: English (en), Bahasa Melayu (bm), Chinese (zh)
@@ -2357,7 +2370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentDatePreset = 'past-30';
   let dateRangeStart = '';
   let dateRangeEnd = '';
-  let courseScope = 'active'; // 'active' | 'all'
+  courseScope = 'active'; // 'active' | 'all'
 
   // Calendar State
   let calCurrentYear = (new Date()).getFullYear();
@@ -10035,7 +10048,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ==========================================================================
   // VIEW 3: FULL-TAB DAY-BY-DAY PAGED LIST MODE
   // ==========================================================================
-  let fullListCurrentDate = new Date();
+  fullListCurrentDate = new Date();
   let fullListWheelCooldown = 0;
 
   function formatDateKeyToShort(key) {
@@ -11056,9 +11069,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.openSpectrumLogin = openSpectrumLogin;
 
-  let authWatcherTimer = null;
-  let isWatchingForLogin = false;
-  let isVerifyingLogin = false;
+  authWatcherTimer = null;
+  isWatchingForLogin = false;
+  isVerifyingLogin = false;
 
   async function checkAndAutoSyncIfLoggedIn() {
     if (isVerifyingLogin || isSyncingActivities) return false;
@@ -11274,11 +11287,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSyncButtonSpinState(false, 'Sync');
   }
 
-  let activitiesProgressHideTimer = null;
-  let syncProgressCurrent = 0;
-  let syncProgressTarget = 0;
-  let syncProgressTicker = null;
-  let syncProgressLatestText = { current: '', count: '', title: '' };
+  activitiesProgressHideTimer = null;
+  syncProgressCurrent = 0;
+  syncProgressTarget = 0;
+  syncProgressTicker = null;
+  syncProgressLatestText = { current: '', count: '', title: '' };
 
   function renderSyncProgressElements(percentVal, currentText, countText, titleText) {
     const clamped = Math.min(100, Math.max(0, Math.round(percentVal)));
@@ -12869,7 +12882,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (btnClosePinModal && pinModal) btnClosePinModal.addEventListener('click', () => { pinModal.style.display = 'none'; });
 
   // Mandatory / Fast OCC Setup Modal Logic
-  let hasSkippedOccSetup = false;
+  hasSkippedOccSetup = false;
 
   async function openOccSetupModal(isMandatory = true) {
     // Disabled: modal popups suppressed per user preference. OCC is auto-detected directly.

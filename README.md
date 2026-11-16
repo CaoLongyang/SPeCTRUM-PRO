@@ -92,7 +92,7 @@ Tired of navigating nested folders and disjointed course pages? SPeCTRUM Pro uni
 
 ## 📦 Production Package
 
-The latest production-ready extension package (v1.0.4) is generated at:
+The latest production-ready extension package (v1.0.5) is generated at:
 ```text
 c:\Users\jonat\Projects\Spectrum PRO\spectrum_extension.zip
 ```
