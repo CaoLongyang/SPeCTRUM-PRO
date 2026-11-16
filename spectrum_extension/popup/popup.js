@@ -4653,8 +4653,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rawDescCandidate = session?.desc || sessionData?.desc || sessionData?.title || att.attTitle || '';
     const typeInfo = getAttendanceTypeInfo(att, rawDescCandidate);
     const typeLabel = typeInfo.label || 'Class';
+    const shortLabel = typeInfo.shortLabel || (typeLabel === 'Lecture' ? 'Lec' : (typeLabel === 'Tutorial' ? 'Tut' : (typeLabel === 'Practical' ? 'Prac' : typeLabel)));
     const typeBadgeClass = typeInfo.badgeClass || 'att-type-general';
-    const typeIconHtml = typeInfo.icon || MINI_ICONS.attendance;
+    const typeIconHtml = MINI_ICONS.attendance;
+    const typeSubBadgeHtml = `<span class="badge-session-type badge-session-sub ${typeBadgeClass}">${escapeHtml(shortLabel)}</span>`;
     const typeBadgeHtml = `<span class="badge-session-type ${typeBadgeClass}">${escapeHtml(typeLabel)}</span>`;
 
     // Extract real attendance stats (persisted from view=5 or computed from sessions)
@@ -4697,7 +4699,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const tooltipText = `Attendance Summary:\n• Attended: ${attendedSess} / ${passedSess} passed (${takenPct})\n• Overall Semester: ${allPct} (${totalSess} total sessions)`;
 
       rateBadgeHtml = `
-        <div class="att-rate-badge ${toneClass}" title="${escapeHtml(tooltipText)}">
+        <div class="att-rate-badge ${toneClass}" data-tooltip="${escapeHtml(tooltipText)}" title="${escapeHtml(tooltipText)}">
           <span class="att-rate-primary">${escapeHtml(takenPct)} (${attendedSess}/${passedSess})</span>
           <span class="att-rate-sep">·</span>
           <span class="att-rate-secondary">${escapeHtml(allPct)} of ${totalSess}</span>
@@ -4712,6 +4714,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       stateBadgeHtml,
       rateBadgeHtml,
       typeLabel,
+      shortLabel,
+      typeSubBadgeHtml,
       typeBadgeClass,
       typeBadgeHtml,
       typeIconHtml,
@@ -4734,20 +4738,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderUnifiedAttendanceCardHtml(vm) {
     return `
       <div class="spectrum-card card-attendance attendance-card ${vm.stateClass}" id="att-card-${escapeHtml(vm.rawAttId)}" data-att-id="${escapeHtml(vm.rawAttId)}" data-course-id="${escapeHtml(vm.cid)}" data-date-key="${escapeHtml(vm.dateKey)}">
-        <div class="card-bounded-icon icon-box-attendance">
-          ${vm.typeIconHtml || MINI_ICONS.attendance}
+        <div class="att-card-aside">
+          <div class="card-bounded-icon icon-box-attendance">
+            ${MINI_ICONS.attendance}
+          </div>
+          ${vm.typeSubBadgeHtml || ''}
         </div>
         <div class="card-content-wrap">
           <div class="att-row-header">
             <div class="att-header-left">
               <span class="att-code-pill">${escapeHtml(vm.code)}</span>
               <span class="att-header-sep">/</span>
-              <span class="att-course-title" title="${escapeHtml(vm.cleanName)}">${escapeHtml(vm.cleanName)}</span>
+              <span class="att-course-title" data-tooltip="${escapeHtml(vm.cleanName)}" title="${escapeHtml(vm.cleanName)}">${escapeHtml(vm.cleanName)}</span>
             </div>
             <div class="att-header-right">
-              ${vm.typeBadgeHtml || ''}
               ${vm.stateBadgeHtml}
-              ${vm.rateBadgeHtml || ''}
               <span class="att-occ-tag">OCC ${escapeHtml(vm.occNum)}</span>
             </div>
           </div>
@@ -4755,6 +4760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="att-hero-left">
               <span class="att-time-hero">${escapeHtml(vm.timeRangeStr)}</span>
               ${vm.statusPillHtml}
+              ${vm.rateBadgeHtml || ''}
             </div>
           </div>
           <div class="att-row-action">
@@ -10001,7 +10007,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           const tooltip = `Course Attendance:\n• Attended: ${attendedSess} / ${passedSess} passed (${takenPct})\n• Overall Semester: ${allPct} (${totalSess} total sessions)`;
           courseRateBadgeHtml = `
-            <span class="course-att-rate-badge ${toneClass}" title="${escapeHtml(tooltip)}">
+            <span class="course-att-rate-badge ${toneClass}" data-tooltip="${escapeHtml(tooltip)}" title="${escapeHtml(tooltip)}">
               <span class="att-rate-primary">${escapeHtml(takenPct)} (${attendedSess}/${passedSess})</span>
               <span class="att-rate-sep">·</span>
               <span class="att-rate-secondary">${escapeHtml(allPct)} of ${totalSess}</span>
@@ -14728,6 +14734,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // ── Global Event-Delegated Card Tooltip Overlay System ──
+  function initCardTooltips() {
+    const overlay = document.getElementById('rail-tooltip-overlay');
+    if (!overlay) return;
+
+    let activeTooltipTarget = null;
+    let tooltipTimer = null;
+
+    document.addEventListener('mouseover', (e) => {
+      const target = e.target.closest('.att-rate-badge, .course-att-rate-badge, [data-tooltip]:not(.has-rail-tooltip):not(.matrix-monogram-btn)');
+      if (!target) return;
+      if (activeTooltipTarget === target) return;
+
+      const text = target.dataset.tooltip || target.getAttribute('title');
+      if (!text) return;
+
+      activeTooltipTarget = target;
+      clearTimeout(tooltipTimer);
+
+      overlay.textContent = text;
+      const rect = target.getBoundingClientRect();
+      const isAbove = rect.top >= 65;
+      const top = isAbove ? (rect.top - 6) : (rect.bottom + 6);
+      const left = Math.max(140, Math.min(window.innerWidth - 140, rect.left + (rect.width / 2)));
+      const baseTransform = isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)';
+
+      overlay.style.left = `${left}px`;
+      overlay.style.top = `${top}px`;
+      overlay.style.transform = `${baseTransform} scale(0.95)`;
+
+      tooltipTimer = requestAnimationFrame(() => {
+        overlay.classList.add('visible');
+        overlay.style.transform = `${baseTransform} scale(1)`;
+      });
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      if (!activeTooltipTarget) return;
+      if (activeTooltipTarget.contains(e.relatedTarget)) return;
+
+      clearTimeout(tooltipTimer);
+      overlay.classList.remove('visible');
+      activeTooltipTarget = null;
+    });
+
+    window.addEventListener('scroll', () => {
+      if (overlay) overlay.classList.remove('visible');
+      activeTooltipTarget = null;
+    }, true);
+  }
+
   // Export assignment handlers on window for programmatic access and tests
   if (typeof window !== 'undefined') {
     window.deleteAssignmentActivity = deleteAssignmentActivity;
@@ -14739,9 +14796,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.renderUnifiedAttendanceCardHtml = renderUnifiedAttendanceCardHtml;
     window.renderAttendanceList = renderAttendanceList;
     window.normalizeMidnightDeadline = normalizeMidnightDeadline;
+    window.initCardTooltips = initCardTooltips;
   }
 
   initHeaderBrandLogo();
+  initCardTooltips();
 });
 
 // Direct Extension Fetchers (Manifest V3 with Host Permissions)
