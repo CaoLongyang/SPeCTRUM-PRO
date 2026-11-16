@@ -14932,7 +14932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           </div>
           <div class="att-pop-footer">
-            <span>↗ Click badge to verify on SPeCTRUM (view=5)</span>
+            <span>↗ Click badge to verify on SPeCTRUM</span>
           </div>
         `;
 
