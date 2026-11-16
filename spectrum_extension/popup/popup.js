@@ -7544,6 +7544,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       courseOccs = changes.courseOccs.newValue || {};
       shouldRerender = true;
     }
+    if (changes.timetableLocations || changes.timetableSessionOverrides || changes.manualTimetableSessions) {
+      if (typeof window !== 'undefined' && typeof window.renderTimetableMode === 'function') {
+        window.renderTimetableMode();
+      }
+    }
     if (changes.lastAttendanceCheckTime || changes.autoAttendanceEnabled || changes.autoAttendanceInterval) {
       if (typeof updateAttendanceDaemonStatus === 'function') updateAttendanceDaemonStatus();
     }

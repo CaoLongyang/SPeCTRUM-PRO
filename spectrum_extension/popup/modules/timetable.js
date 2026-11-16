@@ -1352,12 +1352,30 @@
 
   if (typeof window !== 'undefined' && !window._hasLiveTrackerVisibilityListener) {
     window._hasLiveTrackerVisibilityListener = true;
-    window.addEventListener('focus', () => updateLiveTimeTracker());
+    window.addEventListener('focus', () => {
+      updateLiveTimeTracker();
+      loadCustomLocations();
+    });
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) updateLiveTimeTracker();
+        if (!document.hidden) {
+          updateLiveTimeTracker();
+          loadCustomLocations();
+        }
       });
     }
+  }
+
+  // Live real-time cross-window synchronization (e.g. extension popup <-> workstation tab)
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged && (typeof window === 'undefined' || !window._hasTimetableStorageListener)) {
+    if (typeof window !== 'undefined') window._hasTimetableStorageListener = true;
+    chrome.storage.onChanged.addListener(async (changes, area) => {
+      if (area !== 'local') return;
+      if (changes.timetableLocations || changes.timetableSessionOverrides || changes.manualTimetableSessions || changes.cachedAttendances) {
+        await loadCustomLocations();
+        renderTimetableMode();
+      }
+    });
   }
 
   function renderTimetableMode() {
