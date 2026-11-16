@@ -1203,6 +1203,135 @@ function extractOnlyTime(s) {
   return stripped || str;
 }
 
+// 4b. Parse official summary stats table (from view=5 "All" view)
+function parseAttendanceSummaryStats(doc, html = '', sessions = []) {
+  const text = (doc?.body?.textContent || html || '').replace(/\s+/g, ' ');
+
+  let takenSessions = null;
+  let pointsOverTaken = '';
+  let percentageOverTaken = '';
+  let totalSessions = null;
+  let pointsOverAll = '';
+  let percentageOverAll = '';
+  let maxPoints = '';
+  let maxPercentage = '';
+
+  // 1. Precise DOM table parsing from Moodle's summary table (e.g. table.attwidth, table.generaltable)
+  if (doc && typeof doc.querySelectorAll === 'function') {
+    const rows = doc.querySelectorAll('table.generaltable tr, table.attwidth tr, table.attlist tr, table tr');
+    rows.forEach(r => {
+      const th = r.querySelector('th');
+      const td = r.querySelector('td');
+      if (th && td) {
+        const label = (th.textContent || '').trim().replace(/\s+/g, ' ');
+        const val = (td.textContent || '').trim().replace(/\s+/g, ' ');
+        if (/taken sessions|sesi diambil/i.test(label) && takenSessions == null) {
+          const m = val.match(/\d+/);
+          if (m) takenSessions = parseInt(m[0], 10);
+        } else if (/points over taken sessions|mata (?:ke )?atas sesi (?:yang )?diambil/i.test(label) && !pointsOverTaken) {
+          pointsOverTaken = val;
+        } else if (/percentage over taken sessions|peratusan (?:ke )?atas sesi diambil/i.test(label) && !percentageOverTaken) {
+          percentageOverTaken = val.endsWith('%') ? val : val + '%';
+        } else if (/total (?:number of )?sessions|jumlah sesi/i.test(label) && totalSessions == null) {
+          const m = val.match(/\d+/);
+          if (m) totalSessions = parseInt(m[0], 10);
+        } else if (/points over all sessions|mata (?:ke )?atas semua sesi/i.test(label) && !pointsOverAll) {
+          pointsOverAll = val;
+        } else if (/percentage over all sessions|peratusan (?:ke )?atas semua sesi/i.test(label) && !percentageOverAll) {
+          percentageOverAll = val.endsWith('%') ? val : val + '%';
+        } else if (/max(?:imum)? possible points|maksimum mata/i.test(label) && !maxPoints) {
+          maxPoints = val;
+        } else if (/max(?:imum)? possible percentage|maksimum peratusan/i.test(label) && !maxPercentage) {
+          maxPercentage = val.endsWith('%') ? val : val + '%';
+        }
+      }
+    });
+  }
+
+  // 2. Text-level regex extraction fallback
+  const getMatch = (re) => {
+    const m = text.match(re);
+    return m ? m[1].trim() : null;
+  };
+
+  if (takenSessions == null) {
+    const m = getMatch(/(?:taken sessions|sesi diambil)[:\t\s]+(\d+)/i);
+    if (m) takenSessions = parseInt(m, 10);
+  }
+  if (!pointsOverTaken) {
+    const m = getMatch(/(?:points over taken sessions|mata (?:ke )?atas sesi (?:yang )?diambil)[:\t\s]+([\d\.\s\/]+)/i);
+    if (m) pointsOverTaken = m;
+  }
+  if (!percentageOverTaken) {
+    const m = getMatch(/(?:percentage over taken sessions|peratusan (?:ke )?atas sesi diambil)[:\t\s]+([\d\.]+\s*%?)/i);
+    if (m) percentageOverTaken = m.endsWith('%') ? m : m + '%';
+  }
+  if (totalSessions == null) {
+    const m = getMatch(/(?:total (?:number of )?sessions|jumlah sesi)[:\t\s]+(\d+)/i);
+    if (m) totalSessions = parseInt(m, 10);
+  }
+  if (!pointsOverAll) {
+    const m = getMatch(/(?:points over all sessions|mata (?:ke )?atas semua sesi)[:\t\s]+([\d\.\s\/]+)/i);
+    if (m) pointsOverAll = m;
+  }
+  if (!percentageOverAll) {
+    const m = getMatch(/(?:percentage over all sessions|peratusan (?:ke )?atas semua sesi)[:\t\s]+([\d\.]+\s*%?)/i);
+    if (m) percentageOverAll = m.endsWith('%') ? m : m + '%';
+  }
+  if (!maxPoints) {
+    const m = getMatch(/(?:max(?:imum)? possible points|maksimum mata(?: yang mungkin)?)[:\t\s]+([\d\.\s\/]+)/i);
+    if (m) maxPoints = m;
+  }
+  if (!maxPercentage) {
+    const m = getMatch(/(?:max(?:imum)? possible percentage|maksimum peratusan(?: yang mungkin)?)[:\t\s]+([\d\.]+\s*%?)/i);
+    if (m) maxPercentage = m.endsWith('%') ? m : m + '%';
+  }
+
+  // 3. Fallback derivation from parsed semester sessions if summary table not rendered
+  if (Array.isArray(sessions) && sessions.length > 0 && (takenSessions == null || totalSessions == null || !percentageOverAll)) {
+    const now = new Date();
+    const past = sessions.filter(s => !s.isFuture && s.date && new Date(s.date).getTime() <= now.getTime());
+    const attended = past.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || ''));
+
+    const calcTaken = past.length;
+    const calcTotal = sessions.length;
+    const calcAttended = attended.length;
+
+    if (takenSessions == null) takenSessions = calcTaken;
+    if (totalSessions == null) totalSessions = calcTotal;
+    if (!pointsOverTaken && calcTaken > 0) pointsOverTaken = `${calcAttended * 2} / ${calcTaken * 2}`;
+    if (!percentageOverTaken && calcTaken > 0) percentageOverTaken = `${(Math.round((calcAttended / calcTaken) * 1000) / 10).toFixed(1)}%`;
+    if (!pointsOverAll && calcTotal > 0) pointsOverAll = `${calcAttended * 2} / ${calcTotal * 2}`;
+    if (!percentageOverAll && calcTotal > 0) percentageOverAll = `${(Math.round((calcAttended / calcTotal) * 1000) / 10).toFixed(1)}%`;
+    if (!maxPoints && calcTotal > 0) {
+      const missed = calcTaken - calcAttended;
+      maxPoints = `${(calcTotal * 2) - (missed * 2)} / ${calcTotal * 2}`;
+    }
+    if (!maxPercentage && calcTotal > 0) {
+      const missed = calcTaken - calcAttended;
+      maxPercentage = `${(Math.round((((calcTotal * 2) - (missed * 2)) / (calcTotal * 2)) * 1000) / 10).toFixed(1)}%`;
+    }
+  }
+
+  const percentageOverTakenVal = percentageOverTaken ? parseFloat(percentageOverTaken) : null;
+  const percentageOverAllVal = percentageOverAll ? parseFloat(percentageOverAll) : null;
+  const maxPercentageVal = maxPercentage ? parseFloat(maxPercentage) : null;
+
+  return {
+    takenSessions,
+    pointsOverTaken,
+    percentageOverTaken,
+    percentageOverTakenVal,
+    totalSessions,
+    pointsOverAll,
+    percentageOverAll,
+    percentageOverAllVal,
+    maxPoints,
+    maxPercentage,
+    maxPercentageVal
+  };
+}
+
 // 5. Direct Course Attendance Fetcher (Lightning-Fast: Early OCC Prune + Current & Future 1 Only)
 async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, minTimestamp = 0) {
   const origin = SPECTRUM_ORIGIN;
@@ -1488,15 +1617,34 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
       const { url: fullAttUrl, label: initialLabel } = candidateLinks[i];
       let attHtml = '';
 
-      logDiag('Attendance:Fetch', `[${courseId}] [${i + 1}/${candidateLinks.length}] Requesting student attendance: "${initialLabel}" -> ${fullAttUrl}`);
+      // Direct view=5 URL ("All" semester sessions + real stats summary table)
+      let targetAttUrl = fullAttUrl;
+      if (!/[?&]view=/i.test(targetAttUrl)) {
+        targetAttUrl = targetAttUrl.includes('?') ? `${targetAttUrl}&view=5` : `${targetAttUrl}?view=5`;
+      }
+
+      logDiag('Attendance:Fetch', `[${courseId}] [${i + 1}/${candidateLinks.length}] Requesting student attendance (view=5 all): "${initialLabel}" -> ${targetAttUrl}`);
       try {
-        const res = await fetchWithTimeout(fullAttUrl, { credentials: 'include' }, 12000);
-        logDiag('Attendance:Fetch', `[${courseId}] Base URL HTTP ${res.status} ("${initialLabel}") from ${res.url}`);
+        let res = await fetchWithTimeout(targetAttUrl, { credentials: 'include' }, 12000);
+        logDiag('Attendance:Fetch', `[${courseId}] HTTP ${res.status} ("${initialLabel}") from ${res.url}`);
         if (res.ok && !res.url.includes('/login/')) {
           attHtml = await res.text();
         }
+        // Fallback to base URL if view=5 was rejected or returned permission restriction
+        if (!attHtml || /you do not have permission|tiada kebenaran|not available unless|access denied|tidak dibenarkan/i.test(attHtml)) {
+          if (targetAttUrl !== fullAttUrl) {
+            logDiag('Attendance:Fetch', `[${courseId}] Falling back to base URL: ${fullAttUrl}`);
+            const baseRes = await fetchWithTimeout(fullAttUrl, { credentials: 'include' }, 12000);
+            if (baseRes.ok && !baseRes.url.includes('/login/')) {
+              const baseHtml = await baseRes.text();
+              if (!/you do not have permission|tiada kebenaran|not available unless|access denied|tidak dibenarkan/i.test(baseHtml)) {
+                attHtml = baseHtml;
+              }
+            }
+          }
+        }
       } catch (err) {
-        logDiag('Attendance:Fetch', `[${courseId}] Fetch error on ${fullAttUrl}: ${err?.message || err}`);
+        logDiag('Attendance:Fetch', `[${courseId}] Fetch error on ${targetAttUrl}: ${err?.message || err}`);
       }
 
       if (!attHtml) {
@@ -1512,53 +1660,36 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
 
       let attDoc = parser.parseFromString(attHtml, 'text/html');
       let baseSessions = parseSessionsFromDoc(attDoc);
-      logDiag('Attendance:Sessions', `[${courseId}] Base student view parsed ${baseSessions.length} session(s) for "${initialLabel}"`);
+      logDiag('Attendance:Sessions', `[${courseId}] Student view parsed ${baseSessions.length} session(s) for "${initialLabel}"`);
+
+      // If for any reason sessions are 0, check if there's an allTabLink or alternative view
+      if (baseSessions.length === 0) {
+        const allTabLink = Array.from(attDoc.querySelectorAll('a')).find(a => {
+          const txt = (a.textContent || '').trim().toLowerCase();
+          const href = a.getAttribute('href') || a.href || '';
+          return (/^(?:all|all\s+sessions?|semua|semua\s+sesi)$/i.test(txt) || /[?&]view=(?:5|all)\b/i.test(href)) && href.includes('view.php');
+        });
+
+        if (allTabLink) {
+          let rawHref = allTabLink.getAttribute('href') || allTabLink.href || '';
+          let probeAllUrl = rawHref.startsWith('/') ? `${origin}${rawHref}` : (rawHref.startsWith('http') ? rawHref : `${origin}/mod/attendance/${rawHref}`);
+          try {
+            const probeRes = await fetchWithTimeout(probeAllUrl, { credentials: 'include' }, 12000);
+            if (probeRes.ok && !probeRes.url.includes('/login/')) {
+              const probeHtml = await probeRes.text();
+              if (!/you do not have permission|tiada kebenaran|not available unless|access denied|tidak dibenarkan/i.test(probeHtml)) {
+                attHtml = probeHtml;
+                attDoc = parser.parseFromString(attHtml, 'text/html');
+                baseSessions = parseSessionsFromDoc(attDoc);
+              }
+            }
+          } catch (pErr) {}
+        }
+      }
 
       if (baseSessions.length === 0) {
         logDiag('Attendance:Sessions', `[${courseId}] "${initialLabel}" has 0 student sessions. Skipping inactive/unassigned activity.`);
         continue;
-      }
-
-      // Check if page has an explicit "All Sessions" tab link provided by Moodle (e.g. view=5 or view=all)
-      const allTabLink = Array.from(attDoc.querySelectorAll('a')).find(a => {
-        const txt = (a.textContent || '').trim().toLowerCase();
-        const href = a.getAttribute('href') || a.href || '';
-        return (/^(?:all|all\s+sessions?|semua|semua\s+sesi)$/i.test(txt) || /[?&]view=(?:5|all)\b/i.test(href)) && href.includes('view.php');
-      });
-
-      let probeAllUrl = '';
-      if (allTabLink) {
-        let rawHref = allTabLink.getAttribute('href') || allTabLink.href || '';
-        if (rawHref.startsWith('/')) probeAllUrl = `${origin}${rawHref}`;
-        else if (rawHref.startsWith('http')) probeAllUrl = rawHref;
-        else probeAllUrl = `${origin}/mod/attendance/${rawHref}`;
-      } else if (!/[?&]view=/i.test(fullAttUrl)) {
-        // Probe view=5 (Moodle ATT_VIEW_ALL for students - WITHOUT mode=1!)
-        probeAllUrl = fullAttUrl + (fullAttUrl.includes('?') ? '&' : '?') + 'view=5';
-      }
-
-      if (probeAllUrl && probeAllUrl !== fullAttUrl) {
-        try {
-          logDiag('Attendance:AllView', `[${courseId}] Probing full semester view (view=5): ${probeAllUrl}`);
-          const probeRes = await fetchWithTimeout(probeAllUrl, { credentials: 'include' }, 12000);
-          if (probeRes.ok && !probeRes.url.includes('/login/')) {
-            const probeHtml = await probeRes.text();
-            // Guard against permission denied on probed URL
-            if (!/you do not have permission|tiada kebenaran|not available unless|access denied|tidak dibenarkan/i.test(probeHtml)) {
-              const probeDoc = parser.parseFromString(probeHtml, 'text/html');
-              const probeSessions = parseSessionsFromDoc(probeDoc);
-              logDiag('Attendance:AllView', `[${courseId}] Full view probe parsed ${probeSessions.length} session(s) vs base view ${baseSessions.length} session(s).`);
-              if (probeSessions.length >= baseSessions.length) {
-                attHtml = probeHtml;
-                attDoc = probeDoc;
-              }
-            } else {
-              logDiag('Attendance:AllView', `[${courseId}] Full view probe returned permission restriction. Safely keeping base view sessions.`);
-            }
-          }
-        } catch (tErr) {
-          logDiag('Attendance:AllView', `[${courseId}] Full view probe note: ${tErr?.message || tErr}. Keeping base view.`);
-        }
       }
 
       // Extract title
@@ -1715,19 +1846,19 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
         return parseMin(a) - parseMin(b);
       });
 
-      // Extract overall Attendance Stats from attDoc text if present
-      let pastStats = null;
-      const docText = attDoc.body?.textContent || '';
-      const percentageMatch = docText.match(/(\d+(?:\.\d+)?)\s*%/);
-      const countMatch = docText.match(/(\d+)\s*\/\s*(\d+)/);
-
-      if (percentageMatch) {
-        pastStats = {
-          percentage: percentageMatch[1],
-          attended: countMatch ? countMatch[1] : '',
-          total: countMatch ? countMatch[2] : ''
-        };
-      }
+      // Extract overall Attendance Stats from attDoc (real percentage from view=5 summary table)
+      const summaryStats = parseAttendanceSummaryStats(attDoc, attHtml, allSessions);
+      let pastStats = summaryStats ? {
+        percentage: summaryStats.percentageOverAllVal != null ? String(summaryStats.percentageOverAllVal) : (summaryStats.percentageOverTakenVal != null ? String(summaryStats.percentageOverTakenVal) : ''),
+        takenPercentage: summaryStats.percentageOverTaken || '',
+        overallPercentage: summaryStats.percentageOverAll || '',
+        attended: summaryStats.takenSessions != null ? String(summaryStats.takenSessions) : '',
+        total: summaryStats.totalSessions != null ? String(summaryStats.totalSessions) : '',
+        pointsOverTaken: summaryStats.pointsOverTaken || '',
+        pointsOverAll: summaryStats.pointsOverAll || '',
+        maxPercentage: summaryStats.maxPercentage || '',
+        maxPoints: summaryStats.maxPoints || ''
+      } : null;
 
       let lastRecordedStatus = '';
       const recordedMatches = attHtml.match(/Status:\s*<[^>]+>([^<]+)<\/[^>]+>/i) || attHtml.match(/Status:\s*([A-Za-z]+)/i);
@@ -1770,18 +1901,18 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
           }
         }
 
-        let pastStatsLec = null;
-        if (pastLecSessions.length > 0) {
-          const attendedLec = pastLecSessions.filter(s => s.isPresent).length;
-          const pctLec = Math.round((attendedLec / pastLecSessions.length) * 100);
-          pastStatsLec = {
-            percentage: String(pctLec),
-            attended: String(attendedLec),
-            total: String(pastLecSessions.length)
-          };
-        } else if (pastStats) {
-          pastStatsLec = pastStats;
-        }
+        let summaryStatsLec = parseAttendanceSummaryStats(null, '', lecSessions);
+        let pastStatsLec = summaryStatsLec ? {
+          percentage: summaryStatsLec.percentageOverAllVal != null ? String(summaryStatsLec.percentageOverAllVal) : (summaryStats?.percentageOverAllVal != null ? String(summaryStats.percentageOverAllVal) : ''),
+          takenPercentage: summaryStatsLec.percentageOverTaken || summaryStats?.percentageOverTaken || '',
+          overallPercentage: summaryStatsLec.percentageOverAll || summaryStats?.percentageOverAll || '',
+          attended: summaryStatsLec.takenSessions != null ? String(summaryStatsLec.takenSessions) : '',
+          total: summaryStatsLec.totalSessions != null ? String(summaryStatsLec.totalSessions) : '',
+          pointsOverTaken: summaryStatsLec.pointsOverTaken || '',
+          pointsOverAll: summaryStatsLec.pointsOverAll || '',
+          maxPercentage: summaryStatsLec.maxPercentage || '',
+          maxPoints: summaryStatsLec.maxPoints || ''
+        } : pastStats;
 
         const lastRecordedLecStatus = currentLec ? (currentLec.status || currentLec.statusLabel || '') : '';
 
@@ -1801,18 +1932,18 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
           }
         }
 
-        let pastStatsTut = null;
-        if (pastTutSessions.length > 0) {
-          const attendedTut = pastTutSessions.filter(s => s.isPresent).length;
-          const pctTut = Math.round((attendedTut / pastTutSessions.length) * 100);
-          pastStatsTut = {
-            percentage: String(pctTut),
-            attended: String(attendedTut),
-            total: String(pastTutSessions.length)
-          };
-        } else if (pastStats) {
-          pastStatsTut = pastStats;
-        }
+        let summaryStatsTut = parseAttendanceSummaryStats(null, '', tutSessions);
+        let pastStatsTut = summaryStatsTut ? {
+          percentage: summaryStatsTut.percentageOverAllVal != null ? String(summaryStatsTut.percentageOverAllVal) : (summaryStats?.percentageOverAllVal != null ? String(summaryStats.percentageOverAllVal) : ''),
+          takenPercentage: summaryStatsTut.percentageOverTaken || summaryStats?.percentageOverTaken || '',
+          overallPercentage: summaryStatsTut.percentageOverAll || summaryStats?.percentageOverAll || '',
+          attended: summaryStatsTut.takenSessions != null ? String(summaryStatsTut.takenSessions) : '',
+          total: summaryStatsTut.totalSessions != null ? String(summaryStatsTut.totalSessions) : '',
+          pointsOverTaken: summaryStatsTut.pointsOverTaken || '',
+          pointsOverAll: summaryStatsTut.pointsOverAll || '',
+          maxPercentage: summaryStatsTut.maxPercentage || '',
+          maxPoints: summaryStatsTut.maxPoints || ''
+        } : pastStats;
 
         const lastRecordedTutStatus = currentTut ? (currentTut.status || currentTut.statusLabel || '') : '';
 
@@ -1832,11 +1963,12 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
             courseName,
             attTitle: `${attTitle || 'Attendance'} (Lecture)`,
             subType: 'lecture',
-            attUrl: fullAttUrl,
+            attUrl: targetAttUrl || fullAttUrl,
             detectedOccs: detectedOccs.map(String),
             userOcc: userOcc || '',
             activeSession: activeLecSession,
             nextSession: nextLec,
+            summaryStats: summaryStatsLec || summaryStats,
             pastStats: pastStatsLec,
             lastRecordedStatus: lastRecordedLecStatus,
             sessions: lecSessions
@@ -1852,11 +1984,12 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
             courseName,
             attTitle: `${attTitle || 'Attendance'} (Tutorial)`,
             subType: 'tutorial',
-            attUrl: fullAttUrl,
+            attUrl: targetAttUrl || fullAttUrl,
             detectedOccs: detectedOccs.map(String),
             userOcc: userOcc || '',
             activeSession: activeTutSession,
             nextSession: nextTut,
+            summaryStats: summaryStatsTut || summaryStats,
             pastStats: pastStatsTut,
             lastRecordedStatus: lastRecordedTutStatus,
             sessions: tutSessions
@@ -1874,19 +2007,7 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
         // B. Next upcoming session
         const nextSession = futureSessions[0] || (currentSession && (currentSession.isFuture || currentSession.isToday) ? currentSession : null);
 
-        if (!pastStats && allSessions.length > 0) {
-          const attended = pastSessions.filter(s => s.isPresent).length;
-          if (pastSessions.length > 0) {
-            const pct = Math.round((attended / pastSessions.length) * 100);
-            pastStats = {
-              percentage: String(pct),
-              attended: String(attended),
-              total: String(pastSessions.length)
-            };
-          }
-        }
-
-        logDiag('Attendance:Sessions', `[${courseId}] "${attTitle || 'Attendance'}" -> Kept all ${allSessions.length} session(s). Overall stats: ${pastStats?.percentage || 'N/A'}%`);
+        logDiag('Attendance:Sessions', `[${courseId}] "${attTitle || 'Attendance'}" -> Kept all ${allSessions.length} session(s). Overall stats: ${summaryStats?.percentageOverAll || pastStats?.percentage || 'N/A'}`);
 
         if (allSessions.length === 0) {
           logDiag('Attendance:Sessions', `[${courseId}] "${attTitle || 'Attendance'}" has 0 matching sessions. Skipping.`);
@@ -1908,11 +2029,12 @@ async function fetchCourseAttendance(courseId, courseCode, courseName, userOcc, 
           courseName,
           attTitle: attTitle || 'Attendance',
           subType: determinedSubType,
-          attUrl: fullAttUrl,
+          attUrl: targetAttUrl || fullAttUrl,
           detectedOccs: detectedOccs.map(String),
           userOcc: userOcc || '',
           activeSession,
           nextSession,
+          summaryStats,
           pastStats,
           lastRecordedStatus,
           sessions: allSessions
@@ -1989,4 +2111,5 @@ if (typeof window !== "undefined") {
   window.calculateAssignmentTiming = calculateAssignmentTiming;
   window.extractOccNumberFromGroupText = extractOccNumberFromGroupText;
   window.fetchUserCourseOccs = fetchUserCourseOccs;
+  window.parseAttendanceSummaryStats = parseAttendanceSummaryStats;
 }

@@ -9242,6 +9242,210 @@ body:not(.is-full-tab) .sync-cinematic-current {
   border-color: #D4D4D8 !important;
 }
 
+/* Attendance Summary Stats Strip (Real percentages from view=5) */
+.att-stats-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-hairline, #E4E4E7);
+  border-radius: 5px;
+  padding: 5px 9px;
+  margin: 1px 0 2px;
+}
+
+[data-theme="dark"] .att-stats-strip {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.att-stat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5px;
+  min-width: 0;
+}
+
+.att-stat-label {
+  font-family: var(--font-sans, -apple-system, sans-serif);
+  font-size: 9px;
+  font-weight: 600;
+  color: #71717A;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .att-stat-label {
+  color: #94A3B8;
+}
+
+.att-stat-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.att-stat-value {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, #18181B);
+}
+
+[data-theme="dark"] .att-stat-value {
+  color: #F8FAFC;
+}
+
+.att-stat-value.highlight {
+  color: #0284C7;
+}
+
+[data-theme="dark"] .att-stat-value.highlight {
+  color: #38BDF8;
+}
+
+.att-stat-value.tone-good {
+  color: #059669;
+}
+
+[data-theme="dark"] .att-stat-value.tone-good {
+  color: #34D399;
+}
+
+.att-stat-value.tone-warn {
+  color: #D97706;
+}
+
+[data-theme="dark"] .att-stat-value.tone-warn {
+  color: #FBBF24;
+}
+
+.att-stat-value.tone-danger {
+  color: #DC2626;
+}
+
+[data-theme="dark"] .att-stat-value.tone-danger {
+  color: #F87171;
+}
+
+.att-stat-sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  color: #A1A1AA;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .att-stat-sub {
+  color: #64748B;
+}
+
+.att-stat-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-hairline, #E4E4E7);
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .att-stat-divider {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Header Rate Badge */
+.att-rate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: #F4F4F5;
+  border: 1px solid var(--border-hairline, #E4E4E7);
+  color: #3F3F46;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+[data-theme="dark"] .att-rate-badge {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.09);
+  color: #E2E8F0;
+}
+
+.att-rate-badge .att-rate-num {
+  font-weight: 700;
+}
+
+.att-rate-badge .att-rate-all .att-rate-num {
+  color: #0284C7;
+}
+
+[data-theme="dark"] .att-rate-badge .att-rate-all .att-rate-num {
+  color: #38BDF8;
+}
+
+.att-rate-badge.tone-good .att-rate-taken .att-rate-num {
+  color: #059669;
+}
+
+[data-theme="dark"] .att-rate-badge.tone-good .att-rate-taken .att-rate-num {
+  color: #34D399;
+}
+
+.att-rate-badge.tone-warn .att-rate-taken .att-rate-num {
+  color: #D97706;
+}
+
+[data-theme="dark"] .att-rate-badge.tone-warn .att-rate-taken .att-rate-num {
+  color: #FBBF24;
+}
+
+.att-rate-badge.tone-danger .att-rate-taken .att-rate-num {
+  color: #DC2626;
+}
+
+[data-theme="dark"] .att-rate-badge.tone-danger .att-rate-taken .att-rate-num {
+  color: #F87171;
+}
+
+.att-rate-sep {
+  color: #A1A1AA;
+  font-size: 10px;
+}
+
+.att-rate-lbl {
+  font-size: 9px;
+  color: #71717A;
+  text-transform: uppercase;
+}
+
+[data-theme="dark"] .att-rate-lbl {
+  color: #94A3B8;
+}
+
+/* Course Group Header Rate Badge (By Course view) */
+.course-att-rate-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  color: #0284C7;
+  background: rgba(2, 132, 199, 0.08);
+  border: 1px solid rgba(2, 132, 199, 0.2);
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .course-att-rate-badge {
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
 [data-theme="dark"] .spectrum-card.card-attendance,
 [data-theme="dark"] .scoped-card.scoped-card-attendance {
   background: var(--bg-card, #181c22) !important;

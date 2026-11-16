@@ -155,6 +155,10 @@ const I18N = {
       items: '{n} item{s}',
       assignment: 'Assignment',
       deleteAssignmentTip: 'Not required for my OCC / Delete assignment',
+      semesterRate: 'Semester Rate',
+      takenSessions: 'Taken',
+      maxAttainable: 'Max Attainable',
+      realAttendance: 'Real Attendance',
       noActToday: 'No scheduled activities today',
       syncingTitle: 'SYNCING ACTIVITIES & ATTENDANCE'
     },
@@ -357,6 +361,10 @@ const I18N = {
       items: '{n} item',
       assignment: 'Tugasan',
       deleteAssignmentTip: 'Bukan untuk OCC saya / Padam tugasan',
+      semesterRate: 'Kadar Semester',
+      takenSessions: 'Diambil',
+      maxAttainable: 'Maksimum Boleh Capai',
+      realAttendance: 'Kehadiran Sebenar',
       noActToday: 'Tiada aktiviti hari ini',
       syncingTitle: 'MENYEGERAKKAN DATA'
     },
@@ -559,6 +567,10 @@ const I18N = {
       items: '{n} 项',
       assignment: '作业',
       deleteAssignmentTip: '非本OCC作业 / 删除作业',
+      semesterRate: '学期出席率',
+      takenSessions: '已记录',
+      maxAttainable: '最高可达',
+      realAttendance: '真实出席率',
       noActToday: '今日暂无安排',
       syncingTitle: '正在同步数据'
     },
@@ -4172,6 +4184,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     return null;
   }
 
+  // Helper to dynamically calculate fallback semester attendance stats from session records
+  function computeFallbackStatsFromSessions(sessions) {
+    if (!Array.isArray(sessions) || sessions.length === 0) return null;
+
+    const now = new Date();
+    const pastSessions = sessions.filter(s => !s.isFuture && s.date && new Date(s.date).getTime() <= now.getTime());
+    const attendedSessions = pastSessions.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || ''));
+
+    const takenCount = pastSessions.length;
+    const totalCount = sessions.length;
+    const attendedCount = attendedSessions.length;
+
+    const takenPts = attendedCount * 2;
+    const takenMaxPts = takenCount * 2;
+    const allPts = attendedCount * 2;
+    const allMaxPts = totalCount * 2;
+
+    const pctOverTaken = takenMaxPts > 0 ? (Math.round((takenPts / takenMaxPts) * 1000) / 10).toFixed(1) + '%' : '100.0%';
+    const pctOverAll = allMaxPts > 0 ? (Math.round((allPts / allMaxPts) * 1000) / 10).toFixed(1) + '%' : '0.0%';
+
+    const missedCount = takenCount - attendedCount;
+    const maxPossiblePts = Math.max(0, allMaxPts - (missedCount * 2));
+    const maxPct = allMaxPts > 0 ? (Math.round((maxPossiblePts / allMaxPts) * 1000) / 10).toFixed(1) + '%' : '100.0%';
+
+    return {
+      takenSessions: takenCount,
+      pointsOverTaken: `${takenPts} / ${takenMaxPts}`,
+      percentageOverTaken: pctOverTaken,
+      percentageOverTakenVal: parseFloat(pctOverTaken),
+      totalSessions: totalCount,
+      pointsOverAll: `${allPts} / ${allMaxPts}`,
+      percentageOverAll: pctOverAll,
+      percentageOverAllVal: parseFloat(pctOverAll),
+      maxPoints: `${maxPossiblePts} / ${allMaxPts}`,
+      maxPercentage: maxPct,
+      maxPercentageVal: parseFloat(maxPct)
+    };
+  }
+
   // ── Unified Horizontal Compact Attendance Card View Model (~4:1 Ratio) ──
   function computeAttendanceCardViewModel(att, sessionData = {}) {
     const now = new Date();
@@ -4431,11 +4482,84 @@ document.addEventListener('DOMContentLoaded', async () => {
       actionBtnHtml = `<a href="${escapeHtml(takeUrl)}" target="_blank" class="btn-att-action btn-att-wireframe" title="Open attendance in SPeCTRUM">${t('cards', 'openSpectrum')}</a>`;
     }
 
+    // Extract real attendance stats (persisted from view=5 or computed from sessions)
+    const stats = att.summaryStats || (att.pastStats && (att.pastStats.overallPercentage || att.pastStats.takenPercentage) ? {
+      percentageOverAll: att.pastStats.overallPercentage || (att.pastStats.percentage ? att.pastStats.percentage + '%' : ''),
+      percentageOverAllVal: parseFloat(att.pastStats.overallPercentage || att.pastStats.percentage || 0),
+      percentageOverTaken: att.pastStats.takenPercentage || (att.pastStats.percentage ? att.pastStats.percentage + '%' : ''),
+      percentageOverTakenVal: parseFloat(att.pastStats.takenPercentage || att.pastStats.percentage || 0),
+      pointsOverTaken: att.pastStats.pointsOverTaken || (att.pastStats.attended && att.pastStats.total ? `${att.pastStats.attended} / ${att.pastStats.total}` : ''),
+      pointsOverAll: att.pastStats.pointsOverAll || '',
+      takenSessions: att.pastStats.attended ? parseInt(att.pastStats.attended, 10) : null,
+      totalSessions: att.pastStats.total ? parseInt(att.pastStats.total, 10) : null,
+      maxPercentage: att.pastStats.maxPercentage || '100.0%',
+      maxPoints: att.pastStats.maxPoints || ''
+    } : null) || computeFallbackStatsFromSessions(att.sessions);
+
+    let rateBadgeHtml = '';
+    let summaryStatsHtml = '';
+
+    if (stats && (stats.percentageOverAll || stats.percentageOverTaken)) {
+      const allPct = stats.percentageOverAll || '0.0%';
+      const takenPct = stats.percentageOverTaken || '100.0%';
+      const ptsOverAll = stats.pointsOverAll || '';
+      const ptsOverTaken = stats.pointsOverTaken || '';
+      const totalSess = stats.totalSessions || (att.sessions ? att.sessions.length : 0);
+      const takenSess = stats.takenSessions || 0;
+      const maxPct = stats.maxPercentage || '100.0%';
+      const maxPts = stats.maxPoints || '';
+
+      const takenVal = stats.percentageOverTakenVal != null ? stats.percentageOverTakenVal : parseFloat(takenPct);
+      let toneClass = 'tone-good';
+      if (takenVal < 70) toneClass = 'tone-danger';
+      else if (takenVal < 80) toneClass = 'tone-warn';
+
+      const tooltipText = `Attendance Summary (from view=5):\n• Overall Semester: ${allPct} (${ptsOverAll || 'N/A'}${totalSess ? ` · ${totalSess} sessions` : ''})\n• Taken Sessions: ${takenPct} (${ptsOverTaken || 'N/A'}${takenSess ? ` · ${takenSess} sessions` : ''})\n• Max Attainable: ${maxPct} (${maxPts || 'N/A'})`;
+
+      rateBadgeHtml = `
+        <div class="att-rate-badge ${toneClass}" title="${escapeHtml(tooltipText)}">
+          <span class="att-rate-all"><span class="att-rate-num">${escapeHtml(allPct)}</span> <span class="att-rate-lbl">All</span></span>
+          <span class="att-rate-sep">/</span>
+          <span class="att-rate-taken"><span class="att-rate-num">${escapeHtml(takenPct)}</span> <span class="att-rate-lbl">Taken</span></span>
+        </div>
+      `;
+
+      summaryStatsHtml = `
+        <div class="att-stats-strip" title="${escapeHtml(tooltipText)}">
+          <div class="att-stat-cell stat-cell-overall">
+            <span class="att-stat-label">${t('cards', 'semesterRate', 'Semester Rate')}</span>
+            <div class="att-stat-value-group">
+              <span class="att-stat-value highlight">${escapeHtml(allPct)}</span>
+              ${ptsOverAll ? `<span class="att-stat-sub">(${escapeHtml(ptsOverAll)} pts)</span>` : ''}
+            </div>
+          </div>
+          <div class="att-stat-divider"></div>
+          <div class="att-stat-cell stat-cell-taken">
+            <span class="att-stat-label">${t('cards', 'takenSessions', 'Taken')} (${takenSess}/${totalSess || '–'})</span>
+            <div class="att-stat-value-group">
+              <span class="att-stat-value ${toneClass}">${escapeHtml(takenPct)}</span>
+              ${ptsOverTaken ? `<span class="att-stat-sub">(${escapeHtml(ptsOverTaken)} pts)</span>` : ''}
+            </div>
+          </div>
+          <div class="att-stat-divider"></div>
+          <div class="att-stat-cell stat-cell-max">
+            <span class="att-stat-label">${t('cards', 'maxAttainable', 'Max Attainable')}</span>
+            <div class="att-stat-value-group">
+              <span class="att-stat-value">${escapeHtml(maxPct)}</span>
+              ${maxPts ? `<span class="att-stat-sub">(${escapeHtml(maxPts)})</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     return {
       stateClass,
       timeRangeStr,
       statusPillHtml,
       stateBadgeHtml,
+      rateBadgeHtml,
+      summaryStatsHtml,
       code,
       cleanName,
       occNum,
@@ -4467,6 +4591,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="att-header-right">
               ${vm.stateBadgeHtml}
+              ${vm.rateBadgeHtml || ''}
               <span class="att-occ-tag">OCC ${escapeHtml(vm.occNum)}</span>
             </div>
           </div>
@@ -4476,6 +4601,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               ${vm.statusPillHtml}
             </div>
           </div>
+          ${vm.summaryStatsHtml || ''}
           <div class="att-row-action">
             <div class="att-progress-section">
               <div class="att-progress-header">
@@ -9688,6 +9814,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const detectedOccsFormatted = (group.detectedOccs || []).map(cleanOccNumber).filter(Boolean);
 
         const cleanGroupCourse = cleanDisplayCourseName(group.courseName, group.courseCode);
+        const courseStats = group.items.find(a => a.summaryStats)?.summaryStats || (typeof computeFallbackStatsFromSessions === 'function' ? computeFallbackStatsFromSessions(group.items.flatMap(a => a.sessions || [])) : null);
+        let courseRateBadgeHtml = '';
+        if (courseStats && (courseStats.percentageOverAll || courseStats.percentageOverTaken)) {
+          const allPct = courseStats.percentageOverAll || '0.0%';
+          const takenPct = courseStats.percentageOverTaken || '100.0%';
+          const tooltip = `Course Attendance (view=5):\n• Overall Semester: ${allPct} (${courseStats.pointsOverAll || ''})\n• Taken Sessions: ${takenPct} (${courseStats.pointsOverTaken || ''})`;
+          courseRateBadgeHtml = `<span class="course-att-rate-badge" title="${escapeHtml(tooltip)}">${escapeHtml(allPct)} All · ${escapeHtml(takenPct)} Taken</span>`;
+        }
 
         return `
           <div class="course-group-card expanded" id="att-course-${cid}">
@@ -9718,6 +9852,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
               <div class="course-group-meta">
                 ${hasOpen ? '<span class="att-open-pulse"><span class="dot"></span> OPEN NOW</span>' : ''}
+                ${courseRateBadgeHtml}
                 <button type="button" class="btn-wireframe btn-sync-single-course" data-course-id="${cid}" data-course-code="${escapeHtml(group.courseCode || '')}" title="Fast Sync this course only (~500ms)" style="padding:2px 7px;font-size:10px;display:inline-flex;align-items:center;gap:3px;">🔄 Sync</button>
                 <span class="badge-count">${group.items.length} Type${group.items.length === 1 ? '' : 's'}</span>
                 <span class="course-group-chevron">▼</span>
@@ -14414,6 +14549,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.restoreAllAssignmentActivities = restoreAllAssignmentActivities;
     window.renderAssignmentsList = renderAssignmentsList;
     window.renderHiddenAssignmentSettings = renderHiddenAssignmentSettings;
+    window.computeAttendanceCardViewModel = computeAttendanceCardViewModel;
+    window.renderUnifiedAttendanceCardHtml = renderUnifiedAttendanceCardHtml;
+    window.renderAttendanceList = renderAttendanceList;
   }
 
   initHeaderBrandLogo();
