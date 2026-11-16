@@ -442,11 +442,12 @@ async function fetchCourseMaterialsDirectly(courseId, allowedExts, materialsOnly
   }
 }
 
-// 3. Direct Course Announcements Fetcher
+// 3. Direct Course Announcements Fetcher (Supports multi-forum scanning & embedded exam announcements)
 async function fetchCourseAnnouncements(courseId, courseCode, courseName, minTimestamp = 0) {
   const announcements = [];
   const origin = SPECTRUM_ORIGIN;
   const parser = new DOMParser();
+  const now = new Date();
 
   try {
     const courseRes = await fetchWithTimeout(`${origin}/course/view.php?id=${courseId}`, { credentials: 'include' }, 12000);
@@ -455,83 +456,113 @@ async function fetchCourseAnnouncements(courseId, courseCode, courseName, minTim
     const courseHtml = await courseRes.text();
     const courseDoc = parser.parseFromString(`<base href="${origin}/">${courseHtml}`, 'text/html');
 
-    // Find forum / announcement links
-    let forumUrl = '';
+    // Find all forum / announcement links (e.g. Announcements forum, Week 7 Mid Sem Exam forum)
     const allLinks = Array.from(courseDoc.querySelectorAll('a[href*="/mod/forum/view.php?id="]'));
+    const forumUrlsToScan = [];
+    const seenForumIds = new Set();
+
     for (const a of allLinks) {
-      const text = (a.innerText || '').toLowerCase();
-      if (/announcement|pengumuman|news|notis|makluman/i.test(text)) {
-        forumUrl = a.href;
-        break;
+      let href = a.getAttribute('href') || a.href;
+      if (href.startsWith('/')) href = `${origin}${href}`;
+      const fMatch = href.match(/id=(\d+)/);
+      const fId = fMatch ? fMatch[1] : href;
+      if (seenForumIds.has(fId)) continue;
+
+      const text = (a.innerText || a.getAttribute('title') || '').trim();
+      if (/announcement|pengumuman|news|notis|makluman|exam|peperiksaan|mid[\s-]?sem|test|ujian|assessment/i.test(text)) {
+        seenForumIds.add(fId);
+        forumUrlsToScan.push({ url: href, name: text });
       }
     }
-    if (!forumUrl && allLinks.length > 0) {
-      forumUrl = allLinks[0].href;
+
+    if (forumUrlsToScan.length === 0 && allLinks.length > 0) {
+      let firstHref = allLinks[0].getAttribute('href') || allLinks[0].href;
+      if (firstHref.startsWith('/')) firstHref = `${origin}${firstHref}`;
+      forumUrlsToScan.push({ url: firstHref, name: 'Announcements' });
     }
 
-    if (!forumUrl) return [];
+    // Limit to scanning at most 4 forums per course to keep network fast
+    const targetForums = forumUrlsToScan.slice(0, 4);
 
-    // Fetch forum page
-    const forumRes = await fetchWithTimeout(forumUrl, { credentials: 'include' }, 12000);
-    if (!forumRes.ok) return [];
+    for (const fItem of targetForums) {
+      try {
+        const forumRes = await fetchWithTimeout(fItem.url, { credentials: 'include' }, 10000);
+        if (!forumRes.ok) continue;
 
-    const forumHtml = await forumRes.text();
-    const forumDoc = parser.parseFromString(`<base href="${origin}/">${forumHtml}`, 'text/html');
+        const forumHtml = await forumRes.text();
+        const forumDoc = parser.parseFromString(`<base href="${origin}/">${forumHtml}`, 'text/html');
 
-    const discussLinks = Array.from(forumDoc.querySelectorAll('a[href*="/mod/forum/discuss.php?d="]'));
-    const seenDiscussions = new Set();
+        const discussLinks = Array.from(forumDoc.querySelectorAll('a[href*="/mod/forum/discuss.php?d="]'));
+        const seenDiscussions = new Set();
 
-    for (const link of discussLinks) {
-      const href = link.href;
-      const dMatch = href.match(/d=(\d+)/);
-      const discussionId = dMatch ? dMatch[1] : href;
-      if (seenDiscussions.has(discussionId)) continue;
-      seenDiscussions.add(discussionId);
+        for (const link of discussLinks) {
+          const href = link.href;
+          const dMatch = href.match(/d=(\d+)/);
+          const discussionId = dMatch ? dMatch[1] : href;
+          if (seenDiscussions.has(discussionId)) continue;
+          seenDiscussions.add(discussionId);
 
-      const title = (link.innerText || link.getAttribute('title') || '').trim();
-      if (!title) continue;
+          const title = (link.innerText || link.getAttribute('title') || '').trim();
+          if (!title) continue;
 
-      const container = link.closest('tr, .discussion, [data-region="discussion-list-item"], .forumpost, li') || link.parentElement;
+          const container = link.closest('tr, .discussion, [data-region="discussion-list-item"], .forumpost, li') || link.parentElement;
 
-      let author = 'Lecturer';
-      let dateStr = 'Recent';
-      let timestamp = Date.now();
-      let isUnread = false;
+          let author = 'Lecturer';
+          let dateStr = 'Recent';
+          let timestamp = Date.now();
+          let isUnread = false;
 
-      if (container) {
-        const authorEl = container.querySelector('.author, [data-region="author-name"], td.author, .userpicture + a');
-        if (authorEl && authorEl.innerText.trim()) author = authorEl.innerText.trim();
+          if (container) {
+            const authorEl = container.querySelector('.author, [data-region="author-name"], td.author, .userpicture + a');
+            if (authorEl && authorEl.innerText.trim()) author = authorEl.innerText.trim();
 
-        const timeEl = container.querySelector('time, [data-region="post-date"], td.lastpost, .created');
-        if (timeEl) {
-          dateStr = (timeEl.innerText || timeEl.getAttribute('title') || '').trim();
-          const datetimeAttr = timeEl.getAttribute('datetime');
-          const parsed = Date.parse(datetimeAttr || dateStr);
-          if (!isNaN(parsed)) timestamp = parsed;
+            const timeEl = container.querySelector('time, [data-region="post-date"], td.lastpost, .created');
+            if (timeEl) {
+              dateStr = (timeEl.innerText || timeEl.getAttribute('title') || '').trim();
+              const datetimeAttr = timeEl.getAttribute('datetime');
+              const parsed = Date.parse(datetimeAttr || dateStr);
+              if (!isNaN(parsed)) timestamp = parsed;
+            }
+
+            isUnread = container.querySelector('.unread, .badge-unread, [data-region="unread-count"]') != null;
+          }
+
+          // Filter out stale announcements (> 120 days old or past minTimestamp)
+          if (minTimestamp && timestamp < minTimestamp) continue;
+          if ((now.getTime() - timestamp) > 120 * 24 * 3600 * 1000) continue;
+
+          // Check if announcement or title carries an exam / test notice
+          let isExamNotice = false;
+          let examDate = null;
+          let examTimeStr = '';
+          const examDetails = extractExamDetails(title, '', now);
+          if (examDetails && !examDetails.stale) {
+            isExamNotice = true;
+            examDate = examDetails.parsedDate;
+            examTimeStr = examDetails.extractedTimeStr;
+          }
+
+          announcements.push({
+            id: `ann_${courseId}_${discussionId}`,
+            courseId,
+            courseCode,
+            courseName,
+            title,
+            discussUrl: href,
+            discussionId,
+            author,
+            dateStr,
+            timestamp,
+            preview: '',
+            unread: isUnread,
+            isExamNotice,
+            examDate,
+            examTimeStr
+          });
         }
-
-        isUnread = container.querySelector('.unread, .badge-unread, [data-region="unread-count"]') != null;
+      } catch (fErr) {
+        console.log(`[SPeCTRUM Pro] Note reading forum ${fItem.url}:`, fErr?.message || fErr);
       }
-
-      // Fast exit: if announcement is older than cutoff, stop parsing further!
-      if (minTimestamp && timestamp < minTimestamp) {
-        break;
-      }
-
-      announcements.push({
-        id: `ann_${courseId}_${discussionId}`,
-        courseId,
-        courseCode,
-        courseName,
-        title,
-        discussUrl: href,
-        discussionId,
-        author,
-        dateStr,
-        timestamp,
-        preview: '',
-        unread: isUnread
-      });
     }
   } catch (err) {
     console.log(`[SPeCTRUM Pro] Failed fetching announcements for course ${courseId}:`, err);
@@ -628,6 +659,12 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
 
         const parsedMeta = calculateAssignmentTiming(dueDateStr, statusText, now, courseName);
 
+        // Skip stale past semester assignments (> 120 days old or prior academic session)
+        if (isPastSemesterStale(parsedMeta.dueDate, title, now, courseName)) {
+          logDiag('Sync:Assign', `[${courseCode || courseId}] ⏭ Skipping stale assignment "${title}" (Due: ${dueDateStr || 'None'})`);
+          continue;
+        }
+
         assignments.push({
           id: `assign_${courseId}_${assignId}`,
           courseId,
@@ -715,6 +752,13 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
         }
 
         const parsedMeta = calculateAssignmentTiming(dueDateStr, statusText, now, courseName);
+
+        // Skip stale past semester quizzes (> 120 days old or prior academic session)
+        if (isPastSemesterStale(parsedMeta.dueDate, title, now, courseName)) {
+          logDiag('Sync:Assign', `[${courseCode || courseId}] ⏭ Skipping stale quiz "${title}" (Due: ${dueDateStr || 'None'})`);
+          continue;
+        }
+
         parsedMeta.badgeLabel = parsedMeta.isSubmitted ? '✔ Quiz Done' : (parsedMeta.isOverdue ? '⚠️ Quiz Closed' : '⏳ Quiz');
 
         assignments.push({
@@ -749,7 +793,7 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
       const html = await res.text();
       const cleanHtml = cleanHtmlForParser(html);
       const doc = parser.parseFromString(`<base href="${origin}/">${cleanHtml}`, 'text/html');
-      const directLinks = doc.querySelectorAll('a[href*="/mod/assign/view.php?id="], a[href*="mod/assign/view.php?id="], a[href*="/mod/quiz/view.php?id="], a[href*="mod/quiz/view.php?id="]');
+      const directLinks = doc.querySelectorAll('a[href*="/mod/assign/view.php?id="], a[href*="mod/assign/view.php?id="], a[href*="/mod/quiz/view.php?id="], a[href*="mod/quiz/view.php?id="], a[href*="/mod/url/view.php?id="], a[href*="mod/url/view.php?id="], a[href*="/mod/page/view.php?id="], a[href*="mod/page/view.php?id="]');
 
       const itemsToInspect = [];
 
@@ -773,9 +817,18 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
         if (!title) title = (link.textContent || link.innerText || '').trim();
         if (!title) title = href.includes('/quiz/') ? 'Quiz' : 'Assignment';
 
+        const isUrlOrPage = href.includes('/mod/url/') || href.includes('/mod/page/');
         const parentActivity = link.closest('.activity, li.activity, .activityinstance') || link.parentElement;
+        const contextText = `${title} ${parentActivity ? (parentActivity.textContent || '') : ''}`;
+
+        // If it's a generic mod/url or mod/page, only proceed if title or context explicitly matches assessment keywords
+        if (isUrlOrPage) {
+          const isAssessment = /quiz|kuiz|test|ujian|mid[\s-]?sem|exam|peperiksaan|assessment|pentaksiran/i.test(contextText);
+          if (!isAssessment) continue;
+        }
+
         let dueDateStr = '';
-        let statusText = 'Not submitted';
+        let statusText = isUrlOrPage ? 'Assessment Link' : 'Not submitted';
 
         if (parentActivity) {
           const dateEl = parentActivity.querySelector('.activity-dates, .text-muted, [data-region="activity-dates"], .activity-information, [data-region="activity-information"]');
@@ -791,11 +844,48 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
           }
         }
 
+        // Try extracting embedded date from title/context (e.g. "Quiz Link (04.11.2026)")
+        if (!dueDateStr) {
+          const examInfo = extractExamDetails(title, contextText, now);
+          if (examInfo && !examInfo.stale) {
+            dueDateStr = `${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim();
+          }
+        }
+
+        if (isUrlOrPage) {
+          const parsedMeta = calculateAssignmentTiming(dueDateStr, statusText, now, courseName);
+          if (isPastSemesterStale(parsedMeta.dueDate, title, now, courseName)) continue;
+
+          assignments.push({
+            id: `url_quiz_${courseId}_${itemId}`,
+            courseId,
+            courseCode,
+            courseName,
+            title,
+            url: href,
+            dueDateStr: dueDateStr || 'See link',
+            dueDate: parsedMeta.dueDate,
+            statusText,
+            isSubmitted: false,
+            isOverdue: parsedMeta.isOverdue,
+            isDueSoon: parsedMeta.isDueSoon,
+            timeRemaining: parsedMeta.timeRemaining,
+            badgeClass: parsedMeta.badgeClass,
+            badgeLabel: /exam|peperiksaan|mid[\s-]?sem/i.test(title) ? '📝 Exam Link' : '⏳ Quiz Link'
+          });
+          logDiag('Sync:Assign', `[${courseCode || courseId}] Assessment link "${title}" -> Due: "${dueDateStr || 'None'}", Parsed: ${parsedMeta.dueDate ? formatDateKey(parsedMeta.dueDate) : 'None'}`);
+          continue;
+        }
+
         // If dueDateStr is still missing, queue for detailed page inspection (limit to 15)
         if (!dueDateStr && itemsToInspect.length < 15) {
           itemsToInspect.push({ itemId, href, title, statusText });
         } else {
           const parsedMeta = calculateAssignmentTiming(dueDateStr, statusText, now, courseName);
+          if (isPastSemesterStale(parsedMeta.dueDate, title, now, courseName)) {
+            logDiag('Sync:Assign', `[${courseCode || courseId}] ⏭ Skipping stale course item "${title}"`);
+            continue;
+          }
           assignments.push({
             id: `assign_${courseId}_${itemId}`,
             courseId,
@@ -849,6 +939,10 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
               }
 
               const parsedMeta = calculateAssignmentTiming(dStr, sStr, now, courseName);
+              if (isPastSemesterStale(parsedMeta.dueDate, item.title, now, courseName)) {
+                logDiag('Sync:Assign', `[${courseCode || courseId}] ⏭ Skipping stale detail item "${item.title}"`);
+                return;
+              }
               assignments.push({
                 id: `assign_${courseId}_${item.itemId}`,
                 courseId,
@@ -873,12 +967,97 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
           }
         }));
       }
+
+      // Scan embedded test / exam notices in course labels / summary blocks (e.g. TEST 1 (25%))
+      const labelEls = doc.querySelectorAll('.activity.label, li.label, .modtype_label, div[data-activityname*="label"]');
+      for (const lbl of Array.from(labelEls)) {
+        const text = (lbl.innerText || lbl.textContent || '').trim();
+        if (!text) continue;
+        const examInfo = extractExamDetails('', text, now);
+        if (examInfo && !examInfo.stale) {
+          const firstLine = text.split(/\r?\n/)[0].replace(/[:\-_]+$/, '').trim();
+          const lblTitle = firstLine.length > 5 && firstLine.length < 80 ? firstLine : 'Upcoming Test / Exam';
+          const lblCleanId = lblTitle.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+          const uniqueId = `lbl_${lbl.getAttribute('id') || lblCleanId}`;
+          if (seenAssignIds.has(uniqueId)) continue;
+          seenAssignIds.add(uniqueId);
+
+          const parsedMeta = calculateAssignmentTiming(`${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim(), 'Upcoming Test', now, courseName);
+          if (isPastSemesterStale(parsedMeta.dueDate, lblTitle, now, courseName)) continue;
+
+          assignments.push({
+            id: `label_exam_${courseId}_${uniqueId}`,
+            courseId,
+            courseCode,
+            courseName,
+            title: lblTitle,
+            url: `${origin}/course/view.php?id=${courseId}`,
+            dueDateStr: `${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim(),
+            dueDate: examInfo.parsedDate,
+            statusText: 'Upcoming Test',
+            isSubmitted: false,
+            isOverdue: examInfo.parsedDate.getTime() < now.getTime(),
+            isDueSoon: (examInfo.parsedDate.getTime() - now.getTime()) <= 72 * 3600 * 1000 && examInfo.parsedDate.getTime() >= now.getTime(),
+            timeRemaining: parsedMeta.timeRemaining,
+            badgeClass: 'badge-due-warning',
+            badgeLabel: '📝 Test'
+          });
+          logDiag('Sync:Assign', `[${courseCode || courseId}] 🎯 Discovered embedded test notice: "${lblTitle}" on ${examInfo.extractedDateStr}`);
+        }
+      }
     }
   } catch (err) {
     console.log(`[SPeCTRUM Pro] Course view assignments note for course ${courseId}:`, err);
   }
 
   return assignments;
+}
+
+// Clean date and time text: strip ordinal suffixes (26th -> 26), normalize dashes and a.m./p.m.
+function cleanDateText(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/(\b\d{1,2})(?:st|nd|rd|th)\b/gi, '$1')
+    .replace(/[\u2013\u2014~]/g, '-')
+    .replace(/a\.m\./gi, 'AM')
+    .replace(/p\.m\./gi, 'PM')
+    .trim();
+}
+
+// Determines if an assignment, quiz, or announcement is from a past semester
+function isPastSemesterStale(dueDate, title = '', now = new Date(), courseName = '') {
+  // 1. If dueDate is known and valid:
+  if (dueDate && !isNaN(dueDate.getTime())) {
+    const diffDays = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24);
+    // If deadline passed more than 120 days ago (~4 months / prior semester), it's stale
+    if (diffDays > 120) return true;
+  }
+
+  // 2. Explicit past academic session in title vs current course session
+  // e.g. "MID SEM TEST SEM 1, 2025/2026"
+  const titleSessMatch = (title || '').match(/\b20(\d{2})\/20(\d{2})\b/);
+  if (titleSessMatch) {
+    const itemEndYear = 2000 + parseInt(titleSessMatch[2], 10);
+    const courseSessMatch = (courseName || '').match(/\b20(\d{2})\/20(\d{2})\b/);
+    if (courseSessMatch) {
+      const courseEndYear = 2000 + parseInt(courseSessMatch[2], 10);
+      if (itemEndYear < courseEndYear) return true;
+    } else {
+      if (itemEndYear < now.getFullYear()) return true;
+    }
+  }
+
+  // 3. Explicit old year pattern in title when no recent due date is present
+  // e.g. "Quiz 2025" or "Test 1 (2024)" when now is late 2026
+  if (!dueDate || isNaN(dueDate.getTime())) {
+    const oldYearMatch = (title || '').match(/\b(20[12][0-9])\b/);
+    if (oldYearMatch) {
+      const y = parseInt(oldYearMatch[1], 10);
+      if (y < now.getFullYear() - 1) return true;
+    }
+  }
+
+  return false;
 }
 
 // Edge case helper: if a deadline is set to exactly 00:00 (midnight), in student practice it belongs to 23:59 of the day before
@@ -896,6 +1075,13 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
   let clean = String(str).replace(/[\u00a0\s]+/g, ' ').trim();
   clean = clean.replace(/^(Due|Opened|Due date|Tarikh akhir|Tarikh tutup|Tarikh tamat|Tarikh serahan|Tarikh hantar|Closing date|Session|Tarikh|Closes|Closed|Buka|Tutup|Deadline|Ends|Cut-off date):\s*/i, '').trim();
   if (!clean || clean === '-' || /none|no due|no deadline|tiada/i.test(clean)) return null;
+
+  // Normalize en/em-dashes, tildes, and dots in a.m./p.m.
+  clean = clean.replace(/[\u2013\u2014~]/g, '-');
+  clean = clean.replace(/a\.m\./gi, 'AM').replace(/p\.m\./gi, 'PM');
+
+  // Strip English ordinal suffixes (e.g. 26th -> 26, 1st -> 1, 2nd -> 2, 3rd -> 3)
+  clean = clean.replace(/(\b\d{1,2})(?:st|nd|rd|th)\b/gi, '$1');
 
   // If string contains embedded close/due marker (e.g. 'Opens: ... Closes: ...')
   const closeSubMatch = clean.match(/(?:Due|Tarikh akhir|Tarikh tutup|Tarikh tamat|Tarikh hantar|Closes|Closed|Tutup|Deadline):\s*([^\n\r]+)/i);
@@ -1118,6 +1304,81 @@ function parseMoodleDate(str, courseName = '', now = new Date()) {
   }
 
   return null;
+}
+
+// Intelligent Assessment/Exam notice extractor from unstructured text / labels / notices
+function extractExamDetails(title = '', content = '', now = new Date()) {
+  const fullText = `${title || ''}\n${content || ''}`;
+
+  // 1. Assessment keyword check: test, mid-sem, exam, quiz, assessment, etc.
+  const isAssessment = /test\s*\d|mid[\s-]?sem|examination|peperiksaan|ujian\s*\d|quiz|kuiz|assessment|pentaksiran|final\s*exam/i.test(fullText);
+  if (!isAssessment) return null;
+
+  let extractedDateStr = '';
+  let extractedTimeStr = '';
+
+  const lines = fullText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // Line-by-line scan for structured key-value pairs (e.g. Date: 26th November 2026)
+  for (const line of lines) {
+    if (!extractedDateStr) {
+      const mDateLine = line.match(/^(?:Date|Tarikh|Date of Exam|Date of Test)[:\s]+([^\n\r]+)/i);
+      if (mDateLine) {
+        extractedDateStr = mDateLine[1].trim();
+      }
+    }
+    if (!extractedTimeStr) {
+      const mTimeLine = line.match(/^(?:Time Open|Time|Masa|Masa Buka|Window|Duration)[:\s]+([^\n\r]+)/i);
+      if (mTimeLine) {
+        extractedTimeStr = mTimeLine[1].trim();
+      }
+    }
+  }
+
+  // Sentence-level regex fallback (e.g. "held on Thursday, 19 Nov, 2026" or "open on 26/11/2026")
+  if (!extractedDateStr) {
+    const mSentence = fullText.match(/(?:held on|held|taking place on|takes place on|on|pada)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+                      fullText.match(/(?:held on|held|taking place on|takes place on|on|pada)\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
+                      fullText.match(/\bopen on\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i);
+    if (mSentence) {
+      extractedDateStr = mSentence[1].trim();
+    }
+  }
+
+  // Title-embedded date fallback (e.g. "Quiz Link (04.11.2026)" or "Test (15 Oct 2026)")
+  if (!extractedDateStr) {
+    const mTitleDate = (title || '').match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/) ||
+                       (title || '').match(/(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:,?\s*20\d{2})?)/i);
+    if (mTitleDate) {
+      extractedDateStr = mTitleDate[1].trim();
+    }
+  }
+
+  if (!extractedDateStr) return null;
+
+  // Time extraction from sentence if line didn't catch it
+  if (!extractedTimeStr) {
+    const mTime = fullText.match(/(?:from|dari)\s+([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm|a\.m\.|p\.m\.)?\s*(?:until|to|hingga|[-–—])\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm|a\.m\.|p\.m\.)?)/i) ||
+                  fullText.match(/\b([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm|a\.m\.|p\.m\.)?\s*[-–—to]\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm|a\.m\.|p\.m\.)?)\b/i);
+    if (mTime) {
+      extractedTimeStr = mTime[1].trim();
+    }
+  }
+
+  const cleanDate = cleanDateText(extractedDateStr);
+  const cleanTime = cleanDateText(extractedTimeStr);
+
+  const parsedDate = parseMoodleDate(`${cleanDate} ${cleanTime}`.trim(), '', now) || parseMoodleDate(cleanDate, '', now);
+  if (!parsedDate || isNaN(parsedDate.getTime())) return null;
+
+  const stale = isPastSemesterStale(parsedDate, title, now);
+
+  return {
+    stale,
+    parsedDate,
+    extractedDateStr: cleanDate,
+    extractedTimeStr: cleanTime || ''
+  };
 }
 
 function calculateAssignmentTiming(dueDateStr, statusText, now = new Date(), courseName = '') {
@@ -2173,4 +2434,7 @@ if (typeof window !== "undefined") {
   window.fetchUserCourseOccs = fetchUserCourseOccs;
   window.parseAttendanceSummaryStats = parseAttendanceSummaryStats;
   window.normalizeMidnightDeadline = normalizeMidnightDeadline;
+  window.isPastSemesterStale = isPastSemesterStale;
+  window.extractExamDetails = extractExamDetails;
+  window.cleanDateText = cleanDateText;
 }

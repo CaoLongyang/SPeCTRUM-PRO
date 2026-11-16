@@ -4224,7 +4224,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       headerLeftText,
       formattedDate,
       title,
-      author
+      author,
+      isExamNotice: !!ann.isExamNotice
     };
   }
 
@@ -4249,6 +4250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="notice-row-footer">
             <div class="notice-footer-left">
               <span class="notice-type-tag">${t('cards', 'notice')}</span>
+              ${vm.isExamNotice ? `<span class="notice-exam-badge" style="font-size:10px;font-weight:700;color:#c97a00;background:rgba(201,122,0,0.12);padding:1px 6px;border-radius:4px;border:1px solid rgba(201,122,0,0.25);margin-left:4px;">📝 EXAM</span>` : ''}
               <span class="notice-sep">·</span>
               <span class="notice-author" title="${escapeHtml(vm.author)}">${escapeHtml(vm.author)}</span>
             </div>
@@ -7843,8 +7845,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!Array.isArray(list)) return [];
     const now = new Date();
     let repairedCount = 0;
+    const isStaleFn = (typeof isPastSemesterStale === 'function') 
+      ? isPastSemesterStale 
+      : ((typeof window !== 'undefined' && typeof window.isPastSemesterStale === 'function') ? window.isPastSemesterStale : null);
+
+    const filtered = [];
     list.forEach(a => {
       const resolved = resolveAssignmentDate(a, now);
+      // Filter out stale assignments/quizzes from prior semesters (e.g. > 120 days old or prior academic session)
+      if (isStaleFn && isStaleFn(resolved, a.title, now, a.courseName)) {
+        logDiag('Sanitize:Assign', `⏭ Filtered out stale past-semester activity: "${a.title}"`);
+        return;
+      }
+
       if (resolved) {
         a.dueDate = resolved;
         const diffMs = resolved.getTime() - now.getTime();
@@ -7882,9 +7895,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           a.badgeLabel = '⏳ Open Task';
         }
       }
+      filtered.push(a);
     });
-    logDiag('Sanitize:Assign', `Sanitized ${list.length} cached assignment(s) (${repairedCount} resolved/repaired).`);
-    return list;
+    logDiag('Sanitize:Assign', `Sanitized ${filtered.length} active assignment(s) (${repairedCount} resolved/repaired, ${list.length - filtered.length} stale dropped).`);
+    return filtered;
   }
 
   // Helper: Sanitize cached attendance sessions (ensure date is parsed Date object & stable IDs)
