@@ -4398,6 +4398,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
   }
 
+  // Resolve attendance standing tone (good, warn, danger) aligned with UM's 80% rule
+  function resolveAttendanceTone(attended, passed, total) {
+    if (!passed || passed <= 0) return 'tone-good';
+    const rate = (attended / passed) * 100;
+
+    // Check if mathematically barred from reaching UM's 80% exam requirement
+    if (total && total >= passed) {
+      const remaining = total - passed;
+      const maxPossibleRate = ((attended + remaining) / total) * 100;
+      if (maxPossibleRate < 80) {
+        return 'tone-danger'; // Critical: Cannot reach 80% final requirement even with 100% future attendance
+      }
+    }
+
+    if (rate >= 80) {
+      return 'tone-good'; // Good Standing: Meeting 80% rule
+    } else if (rate >= 50) {
+      return 'tone-warn'; // Caution: Below 80%, but still recoverable
+    } else if (total && total >= passed && ((attended + (total - passed)) / total) * 100 >= 80) {
+      return 'tone-warn'; // Early semester: below 50% rate so far, but still easily recoverable (>80% max possible)
+    } else {
+      return 'tone-danger'; // Critical: Below 50%
+    }
+  }
+
   // Helper to resolve official SPeCTRUM view=5 (all sessions) attendance URL
   function resolveAttendanceView5Url(att, sessionData = {}) {
     if (!att && !sessionData) return 'https://spectrum.um.edu.my';
@@ -4776,10 +4801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? ((Math.round((attendedSess / totalSess) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%')
         : ((stats.percentageOverAll || '0.0%').replace(/\.0%$/, '%'));
 
-      const takenVal = passedSess > 0 ? ((attendedSess / passedSess) * 100) : (stats.percentageOverTakenVal != null ? stats.percentageOverTakenVal : parseFloat(takenPct));
-      let toneClass = 'tone-good';
-      if (takenVal < 70) toneClass = 'tone-danger';
-      else if (takenVal < 80) toneClass = 'tone-warn';
+      const toneClass = resolveAttendanceTone(attendedSess, passedSess, totalSess);
 
       const view5Url = resolveAttendanceView5Url(att, sessionData);
 
@@ -10123,10 +10145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? ((Math.round((attendedSess / totalSess) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%')
             : ((courseStats.percentageOverAll || '0.0%').replace(/\.0%$/, '%'));
 
-          const takenVal = passedSess > 0 ? ((attendedSess / passedSess) * 100) : (courseStats.percentageOverTakenVal != null ? courseStats.percentageOverTakenVal : parseFloat(takenPct));
-          let toneClass = 'tone-good';
-          if (takenVal < 70) toneClass = 'tone-danger';
-          else if (takenVal < 80) toneClass = 'tone-warn';
+          const toneClass = resolveAttendanceTone(attendedSess, passedSess, totalSess);
 
           const courseAttItem = group.items ? (group.items.find(a => a.attUrl || a.cmid) || group.items[0]) : null;
           const courseView5Url = resolveAttendanceView5Url(courseAttItem, { cid });
@@ -14928,7 +14947,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="att-pop-row">
               <span class="att-pop-label">Semester Progress</span>
-              <span class="att-pop-val">${escapeHtml(allPct)} <span class="att-pop-val-sub">(of ${escapeHtml(total)} total)</span></span>
+              <span class="att-pop-val">${escapeHtml(allPct)} <span class="att-pop-val-sub">(${escapeHtml(attended)} of ${escapeHtml(total)} total)</span></span>
             </div>
           </div>
           <div class="att-pop-footer">
