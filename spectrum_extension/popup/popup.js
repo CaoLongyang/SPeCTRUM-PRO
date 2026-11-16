@@ -154,6 +154,7 @@ const I18N = {
       noDeadline: 'No deadline',
       items: '{n} item{s}',
       assignment: 'Assignment',
+      deleteAssignmentTip: 'Not required for my OCC / Delete assignment',
       noActToday: 'No scheduled activities today',
       syncingTitle: 'SYNCING ACTIVITIES & ATTENDANCE'
     },
@@ -355,6 +356,7 @@ const I18N = {
       noDeadline: 'Tiada had masa',
       items: '{n} item',
       assignment: 'Tugasan',
+      deleteAssignmentTip: 'Bukan untuk OCC saya / Padam tugasan',
       noActToday: 'Tiada aktiviti hari ini',
       syncingTitle: 'MENYEGERAKKAN DATA'
     },
@@ -556,6 +558,7 @@ const I18N = {
       noDeadline: '无截止',
       items: '{n} 项',
       assignment: '作业',
+      deleteAssignmentTip: '非本OCC作业 / 删除作业',
       noActToday: '今日暂无安排',
       syncingTitle: '正在同步数据'
     },
@@ -2026,7 +2029,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentInspectedSlidePage = 1;
   let hiddenAttendanceIds = []; // Array of dismissed/duplicate attendance activity IDs
   let hiddenAttendanceDetails = {}; // id -> { courseCode, title, dateHidden }
+  let hiddenAssignmentIds = []; // Array of dismissed/deleted assignment IDs
+  let hiddenAssignmentDetails = {}; // id -> { id, courseCode, courseName, title, dueDateStr, dateHidden }
   let activePinSession = null;
+
+  function isAssignmentHidden(assign) {
+    if (!assign) return false;
+    if (assign._hidden || assign.isDeleted) return true;
+    if (!Array.isArray(hiddenAssignmentIds) || hiddenAssignmentIds.length === 0) return false;
+    const id = String(assign.id || '');
+    if (id && hiddenAssignmentIds.includes(id)) return true;
+    const urlId = String(((assign.url || assign.viewUrl || '').match(/id=(\d+)/) || [])[1] || '');
+    if (urlId && (hiddenAssignmentIds.includes(`assign_${urlId}`) || hiddenAssignmentIds.includes(urlId))) return true;
+    return false;
+  }
 
   function isAttendanceHidden(att) {
     if (!att) return false;
@@ -2428,6 +2444,228 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', async () => {
         const attId = btn.dataset.attId;
         if (attId) await restoreAttendanceActivity(attId);
+      });
+    });
+  }
+
+  async function deleteAssignmentActivity(assignId) {
+    if (!assignId) return;
+
+    // Find the assignment in assignmentsData
+    const assign = assignmentsData.find(a => String(a.id) === String(assignId) || (a.url && a.url.includes(`id=${assignId}`)));
+    const fullId = assign ? (assign.id || String(assignId)) : String(assignId);
+    const courseCode = assign ? (assign.courseCode || assign.courseName || 'Course') : 'Course';
+    const title = assign ? (assign.title || assign.name || 'Assignment') : 'Assignment';
+
+    const confirmTpl = (currentLang === 'zh')
+      ? '是否隐藏/删除此作业？\n\n[{course}] {title}\n\n该作业将不再计入待办提醒，您可以在“偏好设置”中随时恢复。'
+      : (currentLang === 'bm'
+        ? 'Padam / sembunyikan tugasan ini?\n\n[{course}] {title}\n\nTugasan ini tidak akan dikira dalam peringatan penyerahan. Anda boleh memulihkannya pada bila-bila masa di Tetapan.'
+        : 'Hide / delete this assignment?\n\n[{course}] {title}\n\nIt will no longer count towards pending submissions. You can restore it anytime in Preferences.');
+    const confirmMsg = confirmTpl.replace('{course}', courseCode).replace('{title}', title);
+    if (!confirm(confirmMsg)) return;
+
+    if (!hiddenAssignmentIds.includes(fullId)) {
+      hiddenAssignmentIds.push(fullId);
+    }
+    if (String(assignId) !== String(fullId) && !hiddenAssignmentIds.includes(String(assignId))) {
+      hiddenAssignmentIds.push(String(assignId));
+    }
+    const urlId = ((assign?.url || assign?.viewUrl || '').match(/id=(\d+)/) || [])[1];
+    if (urlId && !hiddenAssignmentIds.includes(urlId)) {
+      hiddenAssignmentIds.push(urlId);
+    }
+
+    if (assign) {
+      assign._hidden = true;
+      assign.isDeleted = true;
+    }
+    assignmentsData.forEach(a => {
+      if (String(a.id) === String(assignId) || String(a.id) === String(fullId)) {
+        a._hidden = true;
+        a.isDeleted = true;
+      }
+    });
+
+    const dueDateText = (assign && assign.dueDateStr) ? assign.dueDateStr : (assign && assign.dueDate ? (assign.dueDate instanceof Date ? assign.dueDate.toLocaleDateString() : String(assign.dueDate)) : 'No deadline');
+    hiddenAssignmentDetails[fullId] = {
+      id: fullId,
+      courseCode: courseCode,
+      courseName: assign?.courseName || '',
+      title: title,
+      dueDateStr: dueDateText,
+      dateHidden: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    };
+
+    await chrome.storage.local.set({
+      hiddenAssignmentIds: hiddenAssignmentIds,
+      hiddenAssignmentDetails: hiddenAssignmentDetails
+    });
+
+    logDiag('Assignments:Delete', `✔ Deleted assignment [${fullId}] (${courseCode} · ${title}). Total hidden: ${hiddenAssignmentIds.length}`);
+
+    renderAssignmentsList();
+    renderTimelineVisualizer();
+    if (currentActivitiesMode === 'calendar') {
+      renderCalendarView(calCurrentYear, calCurrentMonth);
+    }
+    if (document.getElementById('fulllist-wrapper')?.style.display !== 'none') {
+      renderFullListMode();
+    }
+    if (typeof syncPopupActivityStreams === 'function') {
+      syncPopupActivityStreams();
+    }
+    renderHiddenAssignmentSettings();
+    updateKpiCards();
+
+    const successMsg = (currentLang === 'zh')
+      ? '✔ 已删除作业（可在偏好设置中恢复）'
+      : (currentLang === 'bm'
+        ? '✔ Tugasan dipadam (boleh pulih di Tetapan)'
+        : '✔ Assignment deleted (can restore in Preferences)');
+    if (typeof showOccNotification === 'function') showOccNotification('success', successMsg);
+  }
+
+  async function restoreAssignmentActivity(assignId) {
+    if (!assignId) return;
+    hiddenAssignmentIds = hiddenAssignmentIds.filter(id => id !== assignId && id !== String(assignId));
+    delete hiddenAssignmentDetails[assignId];
+    Object.keys(hiddenAssignmentDetails).forEach(k => {
+      if (hiddenAssignmentDetails[k].id === assignId) delete hiddenAssignmentDetails[k];
+    });
+
+    assignmentsData.forEach(a => {
+      if (String(a.id) === String(assignId)) {
+        a._hidden = false;
+        a.isDeleted = false;
+      }
+    });
+
+    await chrome.storage.local.set({
+      hiddenAssignmentIds: hiddenAssignmentIds,
+      hiddenAssignmentDetails: hiddenAssignmentDetails
+    });
+
+    logDiag('Assignments:Restore', `Restored assignment [${assignId}]. Remaining hidden: ${hiddenAssignmentIds.length}`);
+
+    renderAssignmentsList();
+    renderTimelineVisualizer();
+    if (currentActivitiesMode === 'calendar') {
+      renderCalendarView(calCurrentYear, calCurrentMonth);
+    }
+    if (document.getElementById('fulllist-wrapper')?.style.display !== 'none') {
+      renderFullListMode();
+    }
+    if (typeof syncPopupActivityStreams === 'function') {
+      syncPopupActivityStreams();
+    }
+    renderHiddenAssignmentSettings();
+    updateKpiCards();
+  }
+
+  async function restoreAllAssignmentActivities() {
+    hiddenAssignmentIds = [];
+    hiddenAssignmentDetails = {};
+    assignmentsData.forEach(a => {
+      a._hidden = false;
+      a.isDeleted = false;
+    });
+
+    await chrome.storage.local.set({
+      hiddenAssignmentIds: [],
+      hiddenAssignmentDetails: {}
+    });
+
+    logDiag('Assignments:RestoreAll', 'Restored all hidden assignments.');
+
+    renderAssignmentsList();
+    renderTimelineVisualizer();
+    if (currentActivitiesMode === 'calendar') {
+      renderCalendarView(calCurrentYear, calCurrentMonth);
+    }
+    if (document.getElementById('fulllist-wrapper')?.style.display !== 'none') {
+      renderFullListMode();
+    }
+    if (typeof syncPopupActivityStreams === 'function') {
+      syncPopupActivityStreams();
+    }
+    renderHiddenAssignmentSettings();
+    updateKpiCards();
+  }
+
+  function renderHiddenAssignmentSettings() {
+    const container = document.getElementById('hidden-assign-list');
+    const countEl = document.getElementById('pref-hidden-assign-count');
+    const btnRestoreAll = document.getElementById('btn-restore-all-assign');
+    if (!container) return;
+
+    const detailKeys = Object.keys(hiddenAssignmentDetails || {});
+    const items = [];
+    (hiddenAssignmentIds || []).forEach(id => {
+      if (detailKeys.includes(id)) {
+        if (!items.some(it => it.id === id)) {
+          items.push(hiddenAssignmentDetails[id]);
+        }
+      } else if (!items.some(it => it.id === id)) {
+        const matchingAssign = assignmentsData.find(a => String(a.id) === String(id));
+        items.push({
+          id: id,
+          courseCode: matchingAssign?.courseCode || 'Assignment',
+          title: matchingAssign?.title || `ID: ${id}`,
+          dueDateStr: matchingAssign?.dueDateStr || '',
+          dateHidden: 'Saved'
+        });
+      }
+    });
+
+    if (countEl) {
+      countEl.textContent = `${items.length} Excluded Assignment${items.length === 1 ? '' : 's'}`;
+    }
+
+    if (btnRestoreAll) {
+      btnRestoreAll.style.opacity = items.length === 0 ? '0.4' : '1';
+      btnRestoreAll.style.pointerEvents = items.length === 0 ? 'none' : 'auto';
+      btnRestoreAll.onclick = async () => {
+        const confirmMsg = (currentLang === 'zh')
+          ? '是否恢复所有已排除/隐藏的作业？'
+          : 'Restore all excluded / hidden assignments back to your tasks feed?';
+        if (confirm(confirmMsg)) {
+          await restoreAllAssignmentActivities();
+        }
+      };
+    }
+
+    if (items.length === 0) {
+      container.innerHTML = `
+        <div class="pref-hidden-empty">
+          <span>✔ No assignments excluded. All course assignments are active in your feed.</span>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = items.map(item => {
+      const heading = item.courseCode ? `${escapeHtml(item.courseCode)} · ${escapeHtml(item.title || 'Assignment')}` : escapeHtml(item.title || 'Assignment');
+      const dateText = item.dateHidden || 'Recently';
+      const dueInfo = item.dueDateStr ? ` · Due: ${escapeHtml(item.dueDateStr)}` : '';
+
+      return `
+        <div class="pref-hidden-card">
+          <div class="pref-hidden-details">
+            <div class="pref-hidden-title-mono">${heading}</div>
+            <div class="pref-hidden-time-mono">Excluded: ${escapeHtml(dateText)}${dueInfo}</div>
+          </div>
+          <button type="button" class="pref-wireframe-btn btn-restore-single-assign" data-assign-id="${escapeHtml(item.id)}">
+            ↺ Restore
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.btn-restore-single-assign').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const assignId = btn.dataset.assignId;
+        if (assignId) await restoreAssignmentActivity(assignId);
       });
     });
   }
@@ -3154,6 +3392,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (monthHeading) monthHeading.textContent = t('headers', 'preferencesTitle');
       renderOccPreferencesTable();
       renderHiddenAttendanceSettings();
+      renderHiddenAssignmentSettings();
       if (typeof updatePreferencesStorageStats === 'function') updatePreferencesStorageStats();
     }
   }
@@ -3475,6 +3714,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 4. Scan assignmentsData
     assignmentsData.forEach(assign => {
+      if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
       const cid = String(assign.courseId || 'general');
       if (cid !== 'general') {
         const item = registerCourse(cid, assign.courseCode, assign.courseName, null);
@@ -3684,11 +3924,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="card-content-wrap">
           <div class="assign-row-header">
             <div class="assign-header-left" title="${escapeHtml(vm.headerLeftText)}">${escapeHtml(vm.headerLeftText)}</div>
-            ${vm.occFormatted ? `
-              <div class="assign-header-right">
+            <div class="assign-header-right">
+              ${vm.occFormatted ? `
                 <span class="assign-occ-pill">${escapeHtml(vm.occFormatted)}</span>
-              </div>
-            ` : ''}
+              ` : ''}
+              <button type="button" class="btn-delete-assignment" data-assign-id="${escapeHtml(vm.rawId)}" title="${escapeHtml(t('cards', 'deleteAssignmentTip', 'Not required for my OCC / Delete assignment'))}" aria-label="Delete assignment">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           <div class="assign-row-title">
             <span class="assign-title-text" title="${escapeHtml(vm.title)}">${escapeHtml(vm.title)}</span>
@@ -3713,7 +3958,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     `;
   }
 
-  function renderScopedAssignmentCard(assign) {
+  // Document-level delegation for assignment deletion and restoration
+  document.addEventListener('click', async (e) => {
+    const btnDel = e.target.closest('.btn-delete-assignment');
+    if (btnDel) {
+      e.preventDefault();
+      e.stopPropagation();
+      const assignId = btnDel.dataset.assignId;
+      if (assignId) {
+        await deleteAssignmentActivity(assignId);
+      }
+      return;
+    }
+
+    const btnRestorePill = e.target.closest('#btn-restore-assignments-pill');
+    if (btnRestorePill) {
+      e.preventDefault();
+      e.stopPropagation();
+      const confirmMsg = (currentLang === 'zh')
+        ? '是否恢复所有已排除/隐藏的作业？'
+        : 'Restore all excluded / hidden assignments back to your tasks feed?';
+      if (confirm(confirmMsg)) {
+        await restoreAllAssignmentActivities();
+      }
+      return;
+    }
+  });
+
+    function renderScopedAssignmentCard(assign) {
     const vm = computeAssignmentCardViewModel(assign);
     return renderUnifiedAssignmentCardHtml(vm);
   }
@@ -4661,6 +4933,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const matchedAnns = showNotice ? announcementsData.filter(a => isActivityForCourse(a, cInfo)) : [];
     const matchedAssigns = showTasks ? assignmentsData.filter(a => {
+      if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
       if (!isActivityForCourse(a, cInfo)) return false;
       return (typeof isAssignmentMatchingOcc === 'function') ? isAssignmentMatchingOcc(a, cInfo.userOcc) : true;
     }) : [];
@@ -5063,6 +5336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isTargetToday = (targetDateKey === todayKey);
 
       let dAssigns = showTasks && (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
         const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(a, new Date()) : a.dueDate;
         const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
         const isValidDate = d && !isNaN(d.getTime());
@@ -5579,6 +5853,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const todayKey = formatDateKey(new Date());
     assignmentsData.forEach(assign => {
+      if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
       if (activeCourse && !isActivityForCourse(assign, activeCourse)) return;
       if (activeCourse && typeof isAssignmentMatchingOcc === 'function' && !isAssignmentMatchingOcc(assign, activeCourse.userOcc)) return;
       const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(assign, new Date()) : assign.dueDate;
@@ -5820,6 +6095,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const todayKey = formatDateKey(new Date());
       const isTargetToday = (dateKey === todayKey);
       let allAssigns = showTasks ? assignmentsData.filter(a => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
         const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(a, new Date()) : a.dueDate;
         const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
         const isValidDate = d && !isNaN(d.getTime());
@@ -6079,7 +6355,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       attCount = seenRailAttSigs.size;
     } else {
       annCount = (typeof announcementsData !== 'undefined') ? announcementsData.length : 0;
-      assignCount = (typeof assignmentsData !== 'undefined') ? assignmentsData.length : 0;
+      assignCount = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => !isAssignmentHidden(a)).length : 0;
       attCount = (typeof attendancesData !== 'undefined') ? attendancesData.filter(a => a.activeSession).length || attendancesData.length : 0;
     }
 
@@ -6301,6 +6577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (tabId === 'tab-filters') {
       renderOccPreferencesTable();
       renderHiddenAttendanceSettings();
+      renderHiddenAssignmentSettings();
       if (typeof updatePreferencesStorageStats === 'function') updatePreferencesStorageStats();
     }
   }
@@ -6716,6 +6993,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     autoAttendanceInterval: 15,
     hiddenAttendanceIds: [],
     hiddenAttendanceDetails: {},
+    hiddenAssignmentIds: [],
+    hiddenAssignmentDetails: {},
     spineFocalRatio: 0.50,
     customSem1StartDate: ''
   };
@@ -6746,6 +7025,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   syncAutoAttBadge();
   hiddenAttendanceIds = stored.hiddenAttendanceIds || [];
   hiddenAttendanceDetails = stored.hiddenAttendanceDetails || {};
+  hiddenAssignmentIds = stored.hiddenAssignmentIds || [];
+  hiddenAssignmentDetails = stored.hiddenAssignmentDetails || {};
   customSem1StartDate = stored.customSem1StartDate || '';
   const prefSemStartInput = document.getElementById('pref-sem-start-input');
   const btnResetSemStart = document.getElementById('btn-reset-sem-start');
@@ -7664,6 +7945,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       courseOccs = changes.courseOccs.newValue || {};
       shouldRerender = true;
     }
+    if (changes.hiddenAssignmentIds || changes.hiddenAssignmentDetails) {
+      if (changes.hiddenAssignmentIds) {
+        hiddenAssignmentIds = changes.hiddenAssignmentIds.newValue || [];
+      }
+      if (changes.hiddenAssignmentDetails) {
+        hiddenAssignmentDetails = changes.hiddenAssignmentDetails.newValue || {};
+      }
+      shouldRerender = true;
+      if (typeof renderHiddenAssignmentSettings === 'function') renderHiddenAssignmentSettings();
+    }
     if (changes.timetableLocations || changes.timetableSessionOverrides || changes.manualTimetableSessions) {
       if (typeof window !== 'undefined' && typeof window.renderTimetableMode === 'function') {
         window.renderTimetableMode();
@@ -8065,6 +8356,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         logDiag('Timeline:Eval', `Evaluating ${assignmentsData.length} total assignment(s) for timeline track (showTasks: true)...`);
         let tlTasksAdded = 0;
         assignmentsData.forEach(assign => {
+          if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
           const rawD = resolveAssignmentDate(assign, now);
           const isPending = !assign.isSubmitted && !assign.isOverdue;
           const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
@@ -9112,7 +9404,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderAssignmentsList() {
     if (!assignmentsListEl) return;
 
-    let filtered = assignmentsData;
+    let filtered = assignmentsData.filter(a => !isAssignmentHidden(a));
+    const hiddenCount = (hiddenAssignmentIds && hiddenAssignmentIds.length) || 0;
+    const restoreBarHtml = hiddenCount > 0 ? `
+      <div class="assign-hidden-restore-bar">
+        <button type="button" id="btn-restore-assignments-pill" class="assign-hidden-restore-btn" title="Click to restore excluded assignments">
+          ↺ ${hiddenCount} Excluded Assignment${hiddenCount > 1 ? 's' : ''} (Restore All)
+        </button>
+      </div>
+    ` : '';
 
     // Filter pill selection
     if (currentAssignFilter === 'pending') {
@@ -9149,6 +9449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div style="text-align:center;padding:32px 16px;color:var(--text-muted);">
           <p style="font-size:14px;margin-bottom:6px;">✨ No assignments match your filter</p>
           <p style="font-size:11.5px;">All caught up or click "Refresh" to update.</p>
+          ${restoreBarHtml}
         </div>
       `;
       return;
@@ -9205,11 +9506,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }).join('');
 
       attachCourseGroupToggle(assignmentsListEl);
+      if (restoreBarHtml) {
+        assignmentsListEl.insertAdjacentHTML('beforeend', restoreBarHtml);
+      }
 
     } else {
       // Timeline Mode (Newest vs Oldest deadline)
       const sorted = sortAssignments(filtered, currentSortOrder);
-      assignmentsListEl.innerHTML = sorted.map(assign => renderAssignmentCardHtml(assign)).join('');
+      assignmentsListEl.innerHTML = sorted.map(assign => renderAssignmentCardHtml(assign)).join('') + restoreBarHtml;
     }
   }
 
@@ -9804,6 +10108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. Assignments
     if (showTasks) {
       assignmentsData.forEach(assign => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
         const d = resolveAssignmentDate(assign, new Date());
         const isPending = !assign.isSubmitted && !assign.isOverdue;
         const isValidDate = d && !isNaN(d.getTime());
@@ -10216,6 +10521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (showTasks) {
       assignmentsData.forEach(assign => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
         const d = resolveAssignmentDate(assign, now);
         if (d && !isNaN(d.getTime())) dateSet.add(formatDateKey(d));
       });
@@ -10259,6 +10565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. Assignments
     if (showTasks) {
       assignmentsData.forEach(assign => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
         const d = resolveAssignmentDate(assign, now);
         const isPending = !assign.isSubmitted && !assign.isOverdue;
         const isValidDate = d && !isNaN(d.getTime());
@@ -10504,7 +10811,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       courses.forEach(c => {
         const cAnns = announcementsData.filter(a => isActivityForCourse(a, c)).length;
-        const cAssigns = assignmentsData.filter(a => isActivityForCourse(a, c) && ((typeof isAssignmentMatchingOcc === 'function') ? isAssignmentMatchingOcc(a, c.userOcc) : true)).length;
+        const cAssigns = assignmentsData.filter(a => !isAssignmentHidden(a) && isActivityForCourse(a, c) && ((typeof isAssignmentMatchingOcc === 'function') ? isAssignmentMatchingOcc(a, c.userOcc) : true)).length;
         const cAtt = attendancesData.filter(a => (typeof isAttendanceHidden !== 'function' || !isAttendanceHidden(a)) && isActivityForCourse(a, c)).length;
         const count = cAnns + cAssigns + cAtt;
         courseCountsMap.set(String(c.courseId), count);
@@ -10576,6 +10883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const matchedAnns = showNotice ? announcementsData.filter(a => isActivityForCourse(a, cInfo)) : [];
       const matchedAssigns = showTasks ? assignmentsData.filter(a => {
+        if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
         if (!isActivityForCourse(a, cInfo)) return false;
         return (typeof isAssignmentMatchingOcc === 'function') ? isAssignmentMatchingOcc(a, cInfo.userOcc) : true;
       }) : [];
@@ -12062,8 +12370,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update KPI Cards and Badges
   function updateKpiCards() {
     const annCount = announcementsData.length;
-    const pendingCount = assignmentsData.filter(a => !a.isSubmitted).length;
-    const overdueCount = assignmentsData.filter(a => a.isOverdue).length;
+    const visibleAssigns = assignmentsData.filter(a => !isAssignmentHidden(a));
+    const pendingCount = visibleAssigns.filter(a => !a.isSubmitted).length;
+    const overdueCount = visibleAssigns.filter(a => a.isOverdue).length;
     const visibleAtt = attendancesData.filter(a => !isAttendanceHidden(a));
     const activeAttCount = visibleAtt.filter(a => a.activeSession != null).length;
     const upcomingSessionsCount = visibleAtt.reduce((acc, a) => acc + (a.sessions ? a.sessions.filter(s => s.isFuture).length : 0), 0);
@@ -12090,7 +12399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (countSubAnn) countSubAnn.textContent = annCount;
-    if (countSubAssign) countSubAssign.textContent = assignmentsData.length;
+    if (countSubAssign) countSubAssign.textContent = visibleAssigns.length;
     if (countSubAtt) {
       countSubAtt.textContent = activeAttCount > 0 
         ? `${activeAttCount} Open` 
@@ -14096,6 +14405,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         showLoginPrompt({ reason: 'login_required', showModal: true });
       }
     });
+  }
+
+  // Export assignment handlers on window for programmatic access and tests
+  if (typeof window !== 'undefined') {
+    window.deleteAssignmentActivity = deleteAssignmentActivity;
+    window.restoreAssignmentActivity = restoreAssignmentActivity;
+    window.restoreAllAssignmentActivities = restoreAllAssignmentActivities;
+    window.renderAssignmentsList = renderAssignmentsList;
+    window.renderHiddenAssignmentSettings = renderHiddenAssignmentSettings;
   }
 
   initHeaderBrandLogo();

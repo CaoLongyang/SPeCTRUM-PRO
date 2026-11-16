@@ -9355,6 +9355,72 @@ body:not(.is-full-tab) .sync-cinematic-current {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 5px;
+}
+
+.btn-delete-assignment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.spectrum-card:hover .btn-delete-assignment,
+.assignment-card:hover .btn-delete-assignment {
+  opacity: 0.9;
+}
+
+.btn-delete-assignment:hover {
+  opacity: 1 !important;
+  color: #EF4444 !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  transform: scale(1.08);
+}
+
+.btn-delete-assignment:active {
+  transform: scale(0.95);
+}
+
+.btn-delete-assignment svg {
+  display: block;
+  pointer-events: none;
+}
+
+.assign-hidden-restore-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 0 6px 0;
+}
+
+.assign-hidden-restore-btn {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px dashed rgba(239, 68, 68, 0.4);
+  color: #EF4444;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.assign-hidden-restore-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #EF4444;
 }
 
 .assign-occ-pill {

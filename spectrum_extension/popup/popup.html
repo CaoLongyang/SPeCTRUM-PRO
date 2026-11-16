@@ -796,6 +796,29 @@
           </div>
         </div>
 
+        <!-- CARD: EXCLUDED / HIDDEN ASSIGNMENTS -->
+        <div class="pref-card" id="group-hidden-assignments">
+          <div class="pref-card-header">
+            <div class="pref-card-title-wrap">
+              <span class="pref-bullet pref-bullet-black">●</span>
+              <h3 class="pref-card-title">EXCLUDED / HIDDEN ASSIGNMENTS</h3>
+            </div>
+            <span class="pref-badge pref-badge-subtle">CUSTOM OCC</span>
+          </div>
+          <p class="pref-card-desc">Assignments not required for your OCC or dismissed from your pending submissions.</p>
+
+          <!-- Hidden Assignments Summary Box -->
+          <div class="pref-row-box pref-hidden-summary-box">
+            <span id="pref-hidden-assign-count" class="pref-mono-title">0 Excluded Assignments</span>
+            <button type="button" id="btn-restore-all-assign" class="pref-wireframe-btn">Restore All</button>
+          </div>
+
+          <!-- List of Hidden Assignments -->
+          <div id="hidden-assign-list" class="pref-hidden-list">
+            <!-- Dynamically populated via renderHiddenAssignmentSettings() -->
+          </div>
+        </div>
+
         <!-- CARD 4: TIMELINE DOT TRIGGER POSITION -->
         <div class="pref-card" id="group-timeline-focal">
           <div class="pref-card-header">
