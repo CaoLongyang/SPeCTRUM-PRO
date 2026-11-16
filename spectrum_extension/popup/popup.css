@@ -9561,17 +9561,22 @@ body:not(.is-full-tab) .sync-cinematic-current {
   color: #f87171;
 }
 
-/* Action Button: Secondary (Check Portal / Normal) */
-[data-theme="dark"] .btn-assign-action.btn-assign-normal {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #cbd5e1 !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+/* Action Button: Secondary (Check Portal / Normal) - High contrast white matching attendance */
+[data-theme="dark"] .btn-assign-action.btn-assign-normal,
+[data-theme="dark"] .btn-assign-action:not(.btn-assign-submitted):not(.btn-assign-overdue) {
+  background: #E4E4E7 !important;
+  color: #18181B !important;
+  border: 1px solid #D4D4D8 !important;
+  font-weight: 700 !important;
+  border-radius: 4px !important;
 }
 
-[data-theme="dark"] .btn-assign-action.btn-assign-normal:hover {
-  background: rgba(255, 255, 255, 0.10) !important;
-  color: #f1f5f9 !important;
-  border-color: rgba(255, 255, 255, 0.20) !important;
+[data-theme="dark"] .btn-assign-action.btn-assign-normal:hover,
+[data-theme="dark"] .btn-assign-action:not(.btn-assign-submitted):not(.btn-assign-overdue):hover {
+  background: #D4D4D8 !important;
+  color: #0F172A !important;
+  border-color: #94A3B8 !important;
+  transform: translateY(-1px);
 }
 
 /* Action Button: Primary (Submit / Take Action) */
@@ -9892,15 +9897,26 @@ body:not(.is-full-tab) .sync-cinematic-current {
 }
 
 [data-theme="dark"] .btn-notice-open {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  color: #cbd5e1 !important;
+  background: #E4E4E7 !important;
+  color: #18181B !important;
+  border: 1px solid #D4D4D8 !important;
+  font-weight: 700 !important;
+  border-radius: 4px !important;
+  padding: 0 14px;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-decoration: none !important;
+  box-sizing: border-box !important;
+  transition: all 0.15s ease !important;
 }
 
 [data-theme="dark"] .btn-notice-open:hover {
-  background: rgba(255, 255, 255, 0.10) !important;
-  color: #f1f5f9 !important;
-  border-color: rgba(255, 255, 255, 0.20) !important;
+  background: #D4D4D8 !important;
+  color: #0F172A !important;
+  border-color: #94A3B8 !important;
+  transform: translateY(-1px);
+  opacity: 1 !important;
 }
 
 /* 4. Academic Activity Tokens: Bounded Semantic Icons */
