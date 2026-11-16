@@ -2304,6 +2304,135 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
   color: #34D399;
 }
 
+/* Floating Designed Attendance Popover Overlay */
+.attendance-rate-popover {
+  position: fixed !important;
+  z-index: 999999 !important;
+  display: none !important;
+  background: #18181B;
+  color: #FFFFFF;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.45), 0 8px 12px -4px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+  width: auto;
+  min-width: 240px;
+  max-width: 300px;
+  box-sizing: border-box;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  line-height: 1.35;
+  letter-spacing: 0.1px;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.attendance-rate-popover.visible {
+  display: block !important;
+  opacity: 1;
+  transform: scale(1);
+}
+
+[data-theme="dark"] .attendance-rate-popover {
+  background: #14171D;
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 14px 32px -4px rgba(0, 0, 0, 0.65);
+}
+
+.att-pop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  gap: 8px;
+}
+
+.att-pop-title {
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #A1A1AA;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.att-pop-status-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.att-pop-status-badge.tone-good {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34D399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.att-pop-status-badge.tone-warn {
+  background: rgba(245, 158, 11, 0.2);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.att-pop-status-badge.tone-danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #F87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.att-pop-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.att-pop-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.att-pop-label {
+  color: #A1A1AA;
+  font-weight: 500;
+}
+
+.att-pop-val {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: #F4F4F5;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.att-pop-val-sub {
+  font-weight: 500;
+  color: #A1A1AA;
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.att-pop-footer {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #38BDF8;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
 /* Docked Activity Filters Below Calendar (Dedicated Semantic Tinting) */
 .rail-docked-filters {
   display: flex;
@@ -9341,14 +9470,18 @@ body:not(.is-full-tab) .att-card-aside {
   color: #3F3F46;
   white-space: nowrap;
   letter-spacing: 0.1px;
-  cursor: help;
+  cursor: pointer !important;
+  text-decoration: none !important;
   transition: all 0.15s ease;
 }
 
 .att-rate-badge:hover,
 .course-att-rate-badge:hover {
-  border-color: #A1A1AA;
-  background: #ECECEE;
+  border-color: #059669 !important;
+  background: #ECFDF5 !important;
+  color: #065F46 !important;
+  box-shadow: 0 1px 4px rgba(16, 185, 129, 0.15);
+  transform: translateY(-0.5px);
 }
 
 [data-theme="dark"] .att-rate-badge,
@@ -9356,13 +9489,36 @@ body:not(.is-full-tab) .att-card-aside {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.09);
   color: #E2E8F0;
-  cursor: help;
+  cursor: pointer !important;
+  text-decoration: none !important;
 }
 
 [data-theme="dark"] .att-rate-badge:hover,
 [data-theme="dark"] .course-att-rate-badge:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.10);
+  border-color: #10B981 !important;
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #34D399 !important;
+  box-shadow: 0 1px 6px rgba(16, 185, 129, 0.25);
+}
+
+.att-rate-link-icon {
+  font-size: 9px;
+  opacity: 0.55;
+  margin-left: 1px;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  line-height: 1;
+}
+
+.att-rate-badge:hover .att-rate-link-icon,
+.course-att-rate-badge:hover .att-rate-link-icon {
+  opacity: 1;
+  color: #059669;
+  transform: translate(1px, -1px);
+}
+
+[data-theme="dark"] .att-rate-badge:hover .att-rate-link-icon,
+[data-theme="dark"] .course-att-rate-badge:hover .att-rate-link-icon {
+  color: #34D399;
 }
 
 .att-rate-badge .att-rate-primary,

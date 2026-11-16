@@ -4390,6 +4390,56 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
   }
 
+  // Helper to resolve official SPeCTRUM view=5 (all sessions) attendance URL
+  function resolveAttendanceView5Url(att, sessionData = {}) {
+    if (!att && !sessionData) return 'https://spectrum.um.edu.my';
+
+    const candidateUrls = [
+      sessionData.attPageUrl,
+      sessionData.attUrl,
+      sessionData.takeUrl,
+      att?.attUrl,
+      att?.activeSession?.takeUrl
+    ];
+
+    for (const raw of candidateUrls) {
+      if (raw && typeof raw === 'string' && raw.includes('spectrum.um.edu.my')) {
+        try {
+          const u = new URL(raw, 'https://spectrum.um.edu.my');
+          if (u.pathname.includes('/mod/attendance/view.php')) {
+            u.searchParams.set('view', '5');
+            return u.toString();
+          }
+          if (u.pathname.includes('/mod/attendance/take.php')) {
+            const id = u.searchParams.get('id');
+            if (id) {
+              return `https://spectrum.um.edu.my/mod/attendance/view.php?id=${id}&view=5`;
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Direct cmid property
+    const cmid = att?.cmid || sessionData?.cmid;
+    if (cmid && /^\d+$/.test(String(cmid))) {
+      return `https://spectrum.um.edu.my/mod/attendance/view.php?id=${cmid}&view=5`;
+    }
+
+    // Extract numeric module id from att.id (e.g., att_1234_1130610_lec or 1130610)
+    const rawId = String(att?.id || sessionData?.cardId || sessionData?.rawAttId || '');
+    const idMatch = rawId.match(/_(\d{5,8})(?:_[a-z]+)?$/) || rawId.match(/^(\d{5,8})$/);
+    if (idMatch && idMatch[1]) {
+      return `https://spectrum.um.edu.my/mod/attendance/view.php?id=${idMatch[1]}&view=5`;
+    }
+
+    const cid = att?.courseId || sessionData?.cid;
+    if (cid) {
+      return `https://spectrum.um.edu.my/course/view.php?id=${cid}`;
+    }
+    return 'https://spectrum.um.edu.my';
+  }
+
   // ── Unified Horizontal Compact Attendance Card View Model (~4:1 Ratio) ──
   function computeAttendanceCardViewModel(att, sessionData = {}) {
     const now = new Date();
@@ -4696,14 +4746,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (takenVal < 70) toneClass = 'tone-danger';
       else if (takenVal < 80) toneClass = 'tone-warn';
 
-      const tooltipText = `Attendance Summary:\n• Attended: ${attendedSess} / ${passedSess} passed (${takenPct})\n• Overall Semester: ${allPct} (${totalSess} total sessions)`;
+      const view5Url = resolveAttendanceView5Url(att, sessionData);
 
       rateBadgeHtml = `
-        <div class="att-rate-badge ${toneClass}" data-tooltip="${escapeHtml(tooltipText)}" title="${escapeHtml(tooltipText)}">
+        <a href="${escapeHtml(view5Url)}" target="_blank" rel="noopener noreferrer" 
+           class="att-rate-badge ${toneClass}" 
+           data-view5-url="${escapeHtml(view5Url)}"
+           data-attended="${attendedSess}"
+           data-passed="${passedSess}"
+           data-taken-pct="${escapeHtml(takenPct)}"
+           data-all-pct="${escapeHtml(allPct)}"
+           data-total="${totalSess}"
+           data-tone="${toneClass}"
+           aria-label="Attendance: ${escapeHtml(takenPct)} (${attendedSess}/${passedSess}), ${escapeHtml(allPct)} of ${totalSess}">
           <span class="att-rate-primary">${escapeHtml(takenPct)} (${attendedSess}/${passedSess})</span>
           <span class="att-rate-sep">·</span>
           <span class="att-rate-secondary">${escapeHtml(allPct)} of ${totalSess}</span>
-        </div>
+          <span class="att-rate-link-icon">↗</span>
+        </a>
       `;
     }
 
@@ -10005,13 +10065,25 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (takenVal < 70) toneClass = 'tone-danger';
           else if (takenVal < 80) toneClass = 'tone-warn';
 
-          const tooltip = `Course Attendance:\n• Attended: ${attendedSess} / ${passedSess} passed (${takenPct})\n• Overall Semester: ${allPct} (${totalSess} total sessions)`;
+          const courseAttItem = group.items ? (group.items.find(a => a.attUrl || a.cmid) || group.items[0]) : null;
+          const courseView5Url = resolveAttendanceView5Url(courseAttItem, { cid });
+
           courseRateBadgeHtml = `
-            <span class="course-att-rate-badge ${toneClass}" data-tooltip="${escapeHtml(tooltip)}" title="${escapeHtml(tooltip)}">
+            <a href="${escapeHtml(courseView5Url)}" target="_blank" rel="noopener noreferrer" 
+               class="course-att-rate-badge ${toneClass}" 
+               data-view5-url="${escapeHtml(courseView5Url)}"
+               data-attended="${attendedSess}"
+               data-passed="${passedSess}"
+               data-taken-pct="${escapeHtml(takenPct)}"
+               data-all-pct="${escapeHtml(allPct)}"
+               data-total="${totalSess}"
+               data-tone="${toneClass}"
+               aria-label="Course Attendance: ${escapeHtml(takenPct)} (${attendedSess}/${passedSess}), ${escapeHtml(allPct)} of ${totalSess}">
               <span class="att-rate-primary">${escapeHtml(takenPct)} (${attendedSess}/${passedSess})</span>
               <span class="att-rate-sep">·</span>
               <span class="att-rate-secondary">${escapeHtml(allPct)} of ${totalSess}</span>
-            </span>
+              <span class="att-rate-link-icon">↗</span>
+            </a>
           `;
         }
 
@@ -14734,54 +14806,130 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // ── Global Event-Delegated Card Tooltip Overlay System ──
+  // ── Global Event-Delegated Card Tooltip & Popover System ──
   function initCardTooltips() {
-    const overlay = document.getElementById('rail-tooltip-overlay');
-    if (!overlay) return;
+    const railOverlay = document.getElementById('rail-tooltip-overlay');
+    const attPopover = document.getElementById('attendance-rate-popover');
 
-    let activeTooltipTarget = null;
+    let activeAttTarget = null;
+    let activeGeneralTarget = null;
     let tooltipTimer = null;
 
     document.addEventListener('mouseover', (e) => {
-      const target = e.target.closest('.att-rate-badge, .course-att-rate-badge, [data-tooltip]:not(.has-rail-tooltip):not(.matrix-monogram-btn)');
-      if (!target) return;
-      if (activeTooltipTarget === target) return;
+      // 1. Dedicated Rich Attendance Stats Popover
+      const attBadge = e.target.closest('.att-rate-badge, .course-att-rate-badge');
+      if (attBadge && attPopover) {
+        if (activeAttTarget === attBadge) return;
+        activeAttTarget = attBadge;
+        clearTimeout(tooltipTimer);
+
+        if (railOverlay) railOverlay.classList.remove('visible');
+
+        const attended = attBadge.dataset.attended || '0';
+        const passed = attBadge.dataset.passed || '0';
+        const takenPct = attBadge.dataset.takenPct || '100%';
+        const allPct = attBadge.dataset.allPct || '0%';
+        const total = attBadge.dataset.total || '0';
+        const tone = attBadge.dataset.tone || 'tone-good';
+        const statusLabel = (tone === 'tone-good') ? 'Good Standing' : (tone === 'tone-warn' ? 'Caution' : 'Critical');
+
+        attPopover.innerHTML = `
+          <div class="att-pop-header">
+            <span class="att-pop-title">Attendance Overview</span>
+            <span class="att-pop-status-badge ${escapeHtml(tone)}">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div class="att-pop-grid">
+            <div class="att-pop-row">
+              <span class="att-pop-label">Sessions Attended</span>
+              <span class="att-pop-val">${escapeHtml(attended)} / ${escapeHtml(passed)} passed <span class="att-pop-val-sub">(${escapeHtml(takenPct)})</span></span>
+            </div>
+            <div class="att-pop-row">
+              <span class="att-pop-label">Semester Progress</span>
+              <span class="att-pop-val">${escapeHtml(allPct)} <span class="att-pop-val-sub">(of ${escapeHtml(total)} total)</span></span>
+            </div>
+          </div>
+          <div class="att-pop-footer">
+            <span>↗ Click badge to verify on SPeCTRUM (view=5)</span>
+          </div>
+        `;
+
+        const rect = attBadge.getBoundingClientRect();
+        const popWidth = 265;
+        const popHeight = 98;
+
+        let left = rect.left + (rect.width / 2) - (popWidth / 2);
+        left = Math.max(10, Math.min(window.innerWidth - popWidth - 10, left));
+
+        const isAbove = (rect.top >= popHeight + 12);
+        let top = isAbove ? (rect.top - popHeight - 6) : (rect.bottom + 6);
+        top = Math.max(10, Math.min(window.innerHeight - popHeight - 10, top));
+
+        attPopover.style.left = `${left}px`;
+        attPopover.style.top = `${top}px`;
+        attPopover.classList.add('visible');
+        return;
+      }
+
+      // 2. General Simple Tooltips (Course title, etc.)
+      const target = e.target.closest('[data-tooltip]:not(.has-rail-tooltip):not(.matrix-monogram-btn):not(.att-rate-badge):not(.course-att-rate-badge)');
+      if (!target || !railOverlay) return;
+      if (activeGeneralTarget === target) return;
 
       const text = target.dataset.tooltip || target.getAttribute('title');
       if (!text) return;
 
-      activeTooltipTarget = target;
+      activeGeneralTarget = target;
       clearTimeout(tooltipTimer);
 
-      overlay.textContent = text;
+      railOverlay.textContent = text;
       const rect = target.getBoundingClientRect();
       const isAbove = rect.top >= 65;
       const top = isAbove ? (rect.top - 6) : (rect.bottom + 6);
       const left = Math.max(140, Math.min(window.innerWidth - 140, rect.left + (rect.width / 2)));
       const baseTransform = isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)';
 
-      overlay.style.left = `${left}px`;
-      overlay.style.top = `${top}px`;
-      overlay.style.transform = `${baseTransform} scale(0.95)`;
+      railOverlay.style.left = `${left}px`;
+      railOverlay.style.top = `${top}px`;
+      railOverlay.style.transform = `${baseTransform} scale(0.95)`;
 
       tooltipTimer = requestAnimationFrame(() => {
-        overlay.classList.add('visible');
-        overlay.style.transform = `${baseTransform} scale(1)`;
+        railOverlay.classList.add('visible');
+        railOverlay.style.transform = `${baseTransform} scale(1)`;
       });
     });
 
     document.addEventListener('mouseout', (e) => {
-      if (!activeTooltipTarget) return;
-      if (activeTooltipTarget.contains(e.relatedTarget)) return;
+      if (activeAttTarget && !activeAttTarget.contains(e.relatedTarget)) {
+        if (attPopover) attPopover.classList.remove('visible');
+        activeAttTarget = null;
+      }
+      if (activeGeneralTarget && !activeGeneralTarget.contains(e.relatedTarget)) {
+        clearTimeout(tooltipTimer);
+        if (railOverlay) railOverlay.classList.remove('visible');
+        activeGeneralTarget = null;
+      }
+    });
 
-      clearTimeout(tooltipTimer);
-      overlay.classList.remove('visible');
-      activeTooltipTarget = null;
+    // Delegated click handler to guarantee view=5 opens in a new tab even inside Chrome extension popup
+    document.addEventListener('click', (e) => {
+      const badge = e.target.closest('.att-rate-badge, .course-att-rate-badge');
+      if (badge && badge.dataset.view5Url) {
+        e.preventDefault();
+        e.stopPropagation();
+        const url = badge.dataset.view5Url;
+        if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+          chrome.tabs.create({ url });
+        } else {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+      }
     });
 
     window.addEventListener('scroll', () => {
-      if (overlay) overlay.classList.remove('visible');
-      activeTooltipTarget = null;
+      if (attPopover) attPopover.classList.remove('visible');
+      if (railOverlay) railOverlay.classList.remove('visible');
+      activeAttTarget = null;
+      activeGeneralTarget = null;
     }, true);
   }
 
