@@ -7824,7 +7824,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (hMatch) {
         const hrs = parseInt(hMatch[1], 10);
         d = new Date(now.getTime() + hrs * 3600 * 1000);
-      } else if (/overdue today|due today/i.test(assign.timeRemaining)) {
+      } else if (/overdue/i.test(assign.timeRemaining)) {
+        // If already overdue today, place deadline at midnight (00:00) so it remains properly overdue
+        d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      } else if (/due today/i.test(assign.timeRemaining)) {
         d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 0);
       }
     }
