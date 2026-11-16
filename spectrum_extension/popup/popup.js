@@ -1956,6 +1956,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // Safe fallback resolver for escapeHtml from utils.js
+  const escapeHtml = (typeof window !== 'undefined' && typeof window.escapeHtml === 'function')
+    ? window.escapeHtml
+    : (text => {
+        if (!text) return '';
+        if (typeof document !== 'undefined' && document.createElement) {
+          const d = document.createElement('div');
+          d.textContent = text;
+          return d.innerHTML;
+        }
+        return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      });
+
+  // Safe window-delegated module bridge resolvers
+  const renderCourseTreeShells = (...args) => (typeof window !== 'undefined' && typeof window.renderCourseTreeShells === 'function') ? window.renderCourseTreeShells(...args) : null;
+  const updateAllCounts = (...args) => (typeof window !== 'undefined' && typeof window.updateAllCounts === 'function') ? window.updateAllCounts(...args) : null;
+  const updateExpandAllButtonState = (...args) => (typeof window !== 'undefined' && typeof window.updateExpandAllButtonState === 'function') ? window.updateExpandAllButtonState(...args) : null;
+  const detectFileBadge = (...args) => (typeof window !== 'undefined' && typeof window.detectFileBadge === 'function') ? window.detectFileBadge(...args) : { label: 'FILE', bg: '#4B5563', color: '#F3F4F6', border: '#6B7280' };
+  const populateCourseChildren = (...args) => (typeof window !== 'undefined' && typeof window.populateCourseChildren === 'function') ? window.populateCourseChildren(...args) : null;
+  const extractWeeklyTimetableSessions = (...args) => (typeof window !== 'undefined' && typeof window.extractWeeklyTimetableSessions === 'function') ? window.extractWeeklyTimetableSessions(...args) : [];
+
   // State (using outer scope variables)
   coursesData = []; // Hierarchical tree model
   allCoursesDiscovered = []; // Unfiltered courses discovered
@@ -1974,11 +1995,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   let fullListGroupingMode = 'date'; // 'date' | 'course'
   let currentFullTabMode = (() => {
     try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewParam = urlParams.get('view');
+      const validModes = ['calendar', 'timeline', 'list', 'timetable', 'materials', 'preferences'];
+      if (viewParam && validModes.includes(viewParam)) return viewParam;
       const s = localStorage.getItem('spectrum_last_fulltab_mode');
-      if (['calendar', 'timeline', 'list', 'timetable', 'materials', 'preferences'].includes(s)) return s;
+      if (validModes.includes(s)) return s;
     } catch (e) {}
     return 'calendar';
   })(); // 'timeline' | 'calendar' | 'list' | 'materials' | 'preferences' | 'timetable'
+  let timelineHeaderRaf = null;
+  let selectedCourseFilterId = null;
+  let selectedCourseFilterCode = null;
+  let popupSidebarMode = 'calendar';
+  let miniCalYear = new Date().getFullYear();
+  let miniCalMonth = new Date().getMonth();
+  let miniCalSelectedDateKey = '';
+  let miniCalIndicatorMode = 'dots';
+  let isCalendarExpanded = false;
+  let activeDateFilter = null;
+  let activeDateFilterObj = null;
+  let spineFocalRatio = 0.50;
   let currentAssignFilter = 'all'; // 'all' | 'pending' | 'due-soon' | 'submitted' | 'overdue'
   let currentExtFilter = 'ALL'; // 'ALL' | 'PDF' | 'PPTX' | 'ZIP' | 'DOCX' | 'IPYNB'
   let currentAttCourseFilter = 'all'; // 'all' | courseId
@@ -2576,7 +2613,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (currentFullTabMode === 'timetable') {
         monthHeading.textContent = t('headers', 'timetableTitle');
       } else if (currentFullTabMode === 'timeline') {
-        if (typeof updateTimelineHeaderFromScroll === 'function') updateTimelineHeaderFromScroll();
+        monthHeading.textContent = formatMonthYearHeading(now);
+        if (typeof updateTimelineHeaderFromScroll === 'function') {
+          try {
+            updateTimelineHeaderFromScroll();
+          } catch (e) {
+            console.warn('[SPeCTRUM Pro] Early timeline header update note:', e);
+          }
+        }
       } else if (currentFullTabMode === 'list') {
         monthHeading.textContent = (fullListGroupingMode === 'course')
           ? t('headers', 'byCourseFeed')
@@ -2992,6 +3036,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const railModeCalendar = document.getElementById('rail-mode-calendar');
   const railModeList = document.getElementById('rail-mode-list');
   const railModeTimetable = document.getElementById('rail-mode-timetable');
+  const railBtnPref = document.getElementById('rail-btn-pref');
+  const railBtnMat = document.getElementById('rail-btn-mat');
 
   function setFullTabMode(mode) {
     const validModes = ['calendar', 'timeline', 'list', 'timetable', 'materials', 'preferences'];
@@ -3012,7 +3058,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const url = new URL(window.location.href);
         if (url.searchParams.get('mode') === 'full') {
           url.searchParams.set('view', mode);
-          window.history.replaceState({ mode: 'full', view: mode }, '', url.toString());
+          window.history.replaceState({ mode: 'full', view: mode }, '', url.search);
         }
       } catch (e) {}
     }
@@ -3092,7 +3138,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         matSec.classList.add('active');
       }
       if (monthHeading) monthHeading.textContent = t('headers', 'materialsTitle');
-      renderCourseTreeShells();
+      const matFn = (typeof renderCourseTreeShells === 'function') ? renderCourseTreeShells : (typeof window !== 'undefined' ? window.renderCourseTreeShells : null);
+      if (matFn) matFn();
       const needsMaterialScan = coursesData.length === 0 || coursesData.some(c => !c.loaded && (!c.sections || c.sections.length === 0));
       if (needsMaterialScan) {
         const scanFn = (typeof scanCourses === 'function') ? scanCourses : (window.scanCourses || null);
@@ -3117,8 +3164,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (railModeTimetable) railModeTimetable.addEventListener('click', () => setFullTabMode('timetable'));
 
   // Left Rail Top Utilities (Preferences & Materials)
-  const railBtnPref = document.getElementById('rail-btn-pref');
-  const railBtnMat = document.getElementById('rail-btn-mat');
   if (railBtnPref) railBtnPref.addEventListener('click', () => setFullTabMode('preferences'));
   if (railBtnMat) railBtnMat.addEventListener('click', () => setFullTabMode('materials'));
 
@@ -3244,18 +3289,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ========================================================
   // SIDEBAR RAIL: MINI-CALENDAR STATE & CONTROLLER
   // ========================================================
-  let miniCalYear = new Date().getFullYear();
-  let miniCalMonth = new Date().getMonth(); // 0-indexed
-  let miniCalSelectedDateKey = '';       // e.g. "2026-10-21"
-  let miniCalIndicatorMode = 'dots';     // 'dots' | 'count'
-  let isCalendarExpanded = false;        // collapsed vs expanded
-  let activeDateFilter = null;           // null = show all, string = YYYY-MM-DD filter
+  miniCalYear = new Date().getFullYear();
+  miniCalMonth = new Date().getMonth(); // 0-indexed
+  miniCalSelectedDateKey = '';       // e.g. "2026-10-21"
+  miniCalIndicatorMode = 'dots';     // 'dots' | 'count'
+  isCalendarExpanded = false;        // collapsed vs expanded
+  activeDateFilter = null;           // null = show all, string = YYYY-MM-DD filter
 
 
   // ── True Zero-Redundancy Course Controller & Monograms ──
-  let popupSidebarMode = 'calendar'; // 'calendar' | 'courses'
-  let selectedCourseFilterId = null;
-  let selectedCourseFilterCode = null;
+  popupSidebarMode = 'calendar'; // 'calendar' | 'courses'
+  selectedCourseFilterId = null;
+  selectedCourseFilterCode = null;
 
   function isActivityActive(type) {
     if (document.body && document.body.classList.contains('is-full-tab')) {
@@ -4250,7 +4295,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // - Defaults to 50% (middle of the screen/container)
   // - User-tunable via toolbar slider, preferences slider, and presets
   // ========================================================================
-  let spineFocalRatio = 0.50; // Default: 50% (middle of screen)
+  spineFocalRatio = 0.50; // Default: 50% (middle of screen)
 
   try {
     const savedFocal = localStorage.getItem('spectrum_spine_focal_ratio');
@@ -5735,7 +5780,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  let activeDateFilterObj = null;
+  // activeDateFilterObj declared at top
 
   function applyMiniCalDateFilter(dateKey, dateObj) {
     activeDateFilter = dateKey || null;
@@ -8636,7 +8681,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  let timelineHeaderRaf = null;
+  // timelineHeaderRaf declared at top level
   function updateTimelineHeaderFromScroll() {
     if (!timelineScrollWrapper || !timelineTrack) return;
     if (timelineHeaderRaf) return;
