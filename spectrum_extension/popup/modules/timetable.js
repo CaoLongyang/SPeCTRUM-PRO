@@ -131,7 +131,15 @@
 
   async function saveSessionOverride(key, fallbackKey, overrideData) {
     if (!key && !fallbackKey) return;
-    if (!overrideData || (!overrideData.venue && !overrideData.hasCustomTime)) {
+    const isOverrideActive = Boolean(
+      overrideData && (
+        overrideData.venue ||
+        overrideData.hasCustomTime ||
+        overrideData.isDeleted ||
+        overrideData.hidden
+      )
+    );
+    if (!isOverrideActive) {
       if (key) delete customSessionOverrides[key];
       if (fallbackKey) delete customSessionOverrides[fallbackKey];
     } else {
@@ -148,6 +156,33 @@
     } catch (e) {
       console.warn('Failed to save timetable session override:', e);
     }
+  }
+
+  function getDeletedSessionsCount() {
+    if (!customSessionOverrides || typeof customSessionOverrides !== 'object') return 0;
+    const deletedEntries = Object.entries(customSessionOverrides).filter(([k, v]) => v && (v.isDeleted || v.hidden));
+    if (deletedEntries.length === 0) return 0;
+    const primaryKeys = deletedEntries.filter(([k]) => /^\d+_/.test(k));
+    if (primaryKeys.length > 0) return primaryKeys.length;
+    return Math.ceil(deletedEntries.length / 2);
+  }
+
+  async function restoreAllDeletedSessions() {
+    if (!customSessionOverrides) return;
+    let modified = false;
+    for (const k of Object.keys(customSessionOverrides)) {
+      if (customSessionOverrides[k] && (customSessionOverrides[k].isDeleted || customSessionOverrides[k].hidden)) {
+        delete customSessionOverrides[k];
+        modified = true;
+      }
+    }
+    if (modified && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      await chrome.storage.local.set({
+        timetableLocations: customSessionOverrides,
+        timetableSessionOverrides: customSessionOverrides
+      });
+    }
+    renderTimetableMode();
   }
 
   function getSessionAcronym(courseName, courseCode) {
@@ -880,7 +915,7 @@
           const rawEndTimeVal = `${pad(s.rawEndHour)}:${pad(s.rawEndMin)}`;
 
           const manualBadgeHtml = s.isManual ? '<span class="tt-manual-tag">MANUAL</span>' : '';
-          const cardTitleTip = s.isManual ? 'Click to edit or delete manual class' : 'Click to edit session time or location';
+          const cardTitleTip = s.isManual ? 'Click to edit or delete manual class' : 'Click to edit or delete class session';
 
           html += `
             <div class="tt-session-card${liveClass}"
@@ -1148,7 +1183,7 @@
           const rawEndTimeVal = `${pad(s.rawEndHour)}:${pad(s.rawEndMin)}`;
 
           const manualBadgeHtmlV = s.isManual ? '<span class="tt-manual-tag">MANUAL</span>' : '';
-          const cardTitleTipV = s.isManual ? 'Click to edit or delete manual class' : 'Click to edit session time or location';
+          const cardTitleTipV = s.isManual ? 'Click to edit or delete manual class' : 'Click to edit or delete class session';
 
           html += `
             <div class="tt-session-card${compactClass}${liveClass}"
@@ -1339,6 +1374,14 @@
           openManualSessionModal(null);
           return;
         }
+        if (e.target.closest('#btn-empty-restore-tt')) {
+          const deletedCount = getDeletedSessionsCount();
+          const confirmTpl = getTimetableText('timetable', 'restoreConfirm', 'Restore {n} hidden/deleted class session(s) back to your timetable?');
+          const confirmMsg = confirmTpl.replace('{n}', deletedCount);
+          if (!confirm(confirmMsg)) return;
+          restoreAllDeletedSessions();
+          return;
+        }
         const card = e.target.closest('.tt-session-card');
         if (!card) return;
         if (card.dataset.isManual === '1') {
@@ -1376,6 +1419,27 @@
       }
     }
 
+    const deletedCount = getDeletedSessionsCount();
+    const btnRestore = document.getElementById('btn-tt-restore-deleted');
+    if (btnRestore) {
+      if (deletedCount > 0) {
+        btnRestore.style.display = 'inline-flex';
+        const restoreTpl = getTimetableText('timetable', 'restoreDeleted', '↺ {n} Hidden (Restore)');
+        btnRestore.textContent = restoreTpl.replace('{n}', deletedCount);
+        if (!btnRestore._hasRestoreListener) {
+          btnRestore._hasRestoreListener = true;
+          btnRestore.addEventListener('click', async () => {
+            const confirmTpl = getTimetableText('timetable', 'restoreConfirm', 'Restore {n} hidden/deleted class session(s) back to your timetable?');
+            const confirmMsg = confirmTpl.replace('{n}', deletedCount);
+            if (!confirm(confirmMsg)) return;
+            await restoreAllDeletedSessions();
+          });
+        }
+      } else {
+        btnRestore.style.display = 'none';
+      }
+    }
+
     if (sessions.length === 0) {
       const scalerEl = document.getElementById('timetable-scaler');
       if (scalerEl) {
@@ -1401,6 +1465,13 @@
           <button type="button" id="btn-empty-add-tt-session" class="btn-cta-solid tt-empty-add-btn">
             <span>+ ${emptyAddLabel}</span>
           </button>
+          ${deletedCount > 0 ? `
+            <div style="margin-top: 12px;">
+              <button type="button" id="btn-empty-restore-tt" class="btn-wireframe" style="color:#ef4444;border-color:rgba(239,68,68,0.35);font-size:11.5px;padding:6px 14px;">
+                ↺ Restore ${deletedCount} Deleted Class${deletedCount > 1 ? 'es' : ''}
+              </button>
+            </div>
+          ` : ''}
         </div>
       `;
       return;
@@ -1620,8 +1691,14 @@
     updateDurationPreview();
 
     if (btnDel) {
+      btnDel.textContent = getTimetableText('timetable', 'deleteClass', 'Delete Class');
+      btnDel.style.display = 'inline-block';
+    }
+    const btnResetOvr = document.getElementById('btn-reset-tt-session-overrides');
+    if (btnResetOvr) {
+      btnResetOvr.textContent = getTimetableText('timetable', 'resetOverrides', 'Reset Overrides');
       const hasOverrides = Boolean(sessInfo.currentVenue || sessInfo.isCustomTime);
-      btnDel.style.display = hasOverrides ? 'inline-block' : 'none';
+      btnResetOvr.style.display = hasOverrides ? 'inline-block' : 'none';
     }
 
     modal.style.display = 'flex';
@@ -2887,6 +2964,23 @@
       if (btnDelete) {
         btnDelete.addEventListener('click', async () => {
           if (!activeSessionForLocation) return;
+          const cName = activeSessionForLocation.courseCode || 'this class';
+          const confirmTpl = getTimetableText('timetable', 'deleteConfirm', 'Are you sure you want to delete {course} from your timetable?');
+          const confirmMsg = confirmTpl.replace('{course}', cName);
+          if (!confirm(confirmMsg)) return;
+          await saveSessionOverride(activeSessionForLocation.key, activeSessionForLocation.fallbackKey, {
+            isDeleted: true,
+            hidden: true
+          });
+          closeLocationModal();
+          renderTimetableMode();
+        });
+      }
+
+      const btnResetOvr = document.getElementById('btn-reset-tt-session-overrides');
+      if (btnResetOvr) {
+        btnResetOvr.addEventListener('click', async () => {
+          if (!activeSessionForLocation) return;
           await saveSessionOverride(activeSessionForLocation.key, activeSessionForLocation.fallbackKey, null);
           closeLocationModal();
           renderTimetableMode();
@@ -3069,6 +3163,9 @@
       if (btnManualDelete) {
         btnManualDelete.addEventListener('click', async () => {
           if (!activeManualEditId) return;
+          const confirmTpl = getTimetableText('timetable', 'deleteConfirm', 'Are you sure you want to delete {course} from your timetable?');
+          const confirmMsg = confirmTpl.replace('{course}', 'this manual class');
+          if (!confirm(confirmMsg)) return;
           manualTimetableSessions = manualTimetableSessions.filter(m => m.id !== activeManualEditId);
           await persistManualTimetableSessions();
           closeManualSessionModal();

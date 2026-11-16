@@ -208,6 +208,11 @@ const I18N = {
       today: 'TODAY',
       addLocation: '+ Add Location',
       editSession: '✏️ Edit Class Session',
+      deleteClass: 'Delete Class',
+      deleteConfirm: 'Are you sure you want to delete {course} from your timetable?',
+      restoreDeleted: '↺ {n} Hidden (Restore)',
+      restoreConfirm: 'Restore {n} hidden/deleted class session(s) back to your timetable?',
+      resetOverrides: 'Reset Overrides',
       venuePlaceholder: '+ Add Location',
       noSessionsFound: 'No Timetable Sessions Found',
       noSessionsSub: 'Attendance sessions for your enrolled courses will appear here automatically.'
@@ -404,6 +409,11 @@ const I18N = {
       today: 'HARI INI',
       addLocation: '+ Tambah Lokasi',
       editSession: '✏️ Edit Sesi Kuliah',
+      deleteClass: 'Padam Kelas',
+      deleteConfirm: 'Adakah anda pasti mahu memadam {course} daripada jadual waktu anda?',
+      restoreDeleted: '↺ {n} Tersembunyi (Pulihkan)',
+      restoreConfirm: 'Pulihkan {n} sesi kelas yang dipadam kembali ke jadual waktu anda?',
+      resetOverrides: 'Set Semula',
       venuePlaceholder: '+ Tambah Lokasi',
       noSessionsFound: 'Tiada Sesi Jadual Waktu Ditemui',
       noSessionsSub: 'Sesi kehadiran kursus anda akan dipaparkan di sini secara automatik.'
@@ -600,6 +610,11 @@ const I18N = {
       today: '今天',
       addLocation: '+ 添加地点',
       editSession: '✏️ 编辑课程',
+      deleteClass: '删除课程',
+      deleteConfirm: '确定要从课表中删除 {course} 吗？',
+      restoreDeleted: '↺ 已隐藏 {n} 节课 (恢复)',
+      restoreConfirm: '确定要恢复 {n} 节已删除的课程回课表吗？',
+      resetOverrides: '重置更改',
       venuePlaceholder: '+ 添加地点',
       noSessionsFound: '未找到课表安排',
       noSessionsSub: '已选课程的考勤与课表安排将自动显示在此处。'
@@ -763,6 +778,15 @@ function updateTimetableTranslations() {
       countEl.textContent = `${sessCount} Contact Session${sessCount === 1 ? '' : 's'}`;
     }
   }
+
+  const btnDelLoc = document.getElementById('btn-delete-tt-location');
+  if (btnDelLoc) btnDelLoc.textContent = t('timetable', 'deleteClass') || 'Delete Class';
+
+  const btnResetOvr = document.getElementById('btn-reset-tt-session-overrides');
+  if (btnResetOvr) btnResetOvr.textContent = t('timetable', 'resetOverrides') || 'Reset Overrides';
+
+  const btnDelManual = document.getElementById('btn-delete-tt-manual');
+  if (btnDelManual) btnDelManual.textContent = t('timetable', 'deleteClass') || 'Delete Class';
 }
 window.updateTimetableTranslations = updateTimetableTranslations;
 window.formatMonthYearHeading = formatMonthYearHeading;

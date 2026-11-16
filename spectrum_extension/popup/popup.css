@@ -10270,6 +10270,16 @@ body:not(.is-full-tab) .sync-cinematic-current {
   color: var(--text-secondary);
 }
 
+.btn-tt-restore {
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-tt-restore:hover {
+  background: rgba(239, 68, 68, 0.18) !important;
+  border-color: #ef4444 !important;
+}
+
 .timetable-toolbar-right {
   display: flex;
   align-items: center;
