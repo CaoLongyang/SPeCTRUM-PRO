@@ -1972,7 +1972,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentActivitiesMode = 'timeline'; // 'timeline' | 'calendar' | 'bycourse'
   let currentSortOrder = 'newest'; // 'newest' | 'oldest'
   let fullListGroupingMode = 'date'; // 'date' | 'course'
-  let currentFullTabMode = 'calendar'; // 'timeline' | 'calendar' | 'list' | 'materials' | 'preferences'
+  let currentFullTabMode = (() => {
+    try {
+      const s = localStorage.getItem('spectrum_last_fulltab_mode');
+      if (['calendar', 'timeline', 'list', 'timetable', 'materials', 'preferences'].includes(s)) return s;
+    } catch (e) {}
+    return 'calendar';
+  })(); // 'timeline' | 'calendar' | 'list' | 'materials' | 'preferences' | 'timetable'
   let currentAssignFilter = 'all'; // 'all' | 'pending' | 'due-soon' | 'submitted' | 'overdue'
   let currentExtFilter = 'ALL'; // 'ALL' | 'PDF' | 'PPTX' | 'ZIP' | 'DOCX' | 'IPYNB'
   let currentAttCourseFilter = 'all'; // 'all' | courseId
@@ -2882,10 +2888,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (btnOpenTab) {
     btnOpenTab.addEventListener('click', (e) => {
       e.preventDefault();
+      const activeTabBtn = document.querySelector('.primary-tab-btn.active');
+      const activeTabId = activeTabBtn?.dataset?.tab || 'tab-activities';
+      let viewParam = currentFullTabMode || 'calendar';
+      if (activeTabId === 'tab-timetable') viewParam = 'timetable';
+      else if (activeTabId === 'tab-materials') viewParam = 'materials';
+      else if (activeTabId === 'tab-filters') viewParam = 'preferences';
+
+      const fullUrl = `popup/popup.html?mode=full&view=${encodeURIComponent(viewParam)}`;
       if (chrome.tabs && chrome.tabs.create) {
-        chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html?mode=full') });
+        chrome.tabs.create({ url: chrome.runtime.getURL(fullUrl) });
       } else {
-        window.open(location.pathname + '?mode=full', '_blank');
+        window.open(location.pathname + `?mode=full&view=${encodeURIComponent(viewParam)}`, '_blank');
       }
     });
   }
@@ -2980,8 +2994,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   const railModeTimetable = document.getElementById('rail-mode-timetable');
 
   function setFullTabMode(mode) {
+    const validModes = ['calendar', 'timeline', 'list', 'timetable', 'materials', 'preferences'];
+    if (!mode || !validModes.includes(mode)) mode = 'calendar';
     currentFullTabMode = mode;
     ensureTabsInCorrectSurface();
+
+    try {
+      localStorage.setItem('spectrum_last_fulltab_mode', mode);
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ lastFullTabMode: mode });
+      }
+    } catch (e) {}
+
+    // Seamlessly sync URL parameter so F5 refresh preserves active view
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('mode') === 'full') {
+          url.searchParams.set('view', mode);
+          window.history.replaceState({ mode: 'full', view: mode }, '', url.toString());
+        }
+      } catch (e) {}
+    }
 
     const calSec = document.getElementById('calendar-section');
     const tlSec = document.getElementById('timeline-visualizer-section');
@@ -3091,7 +3125,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize Full Tab Mode on load
   if (isFullTab) {
     const urlParams = new URLSearchParams(window.location.search);
-    const initialMode = urlParams.get('mode') === 'full' ? (urlParams.get('view') || 'calendar') : 'calendar';
+    const validModes = ['calendar', 'timeline', 'list', 'timetable', 'materials', 'preferences'];
+    let savedMode = null;
+    try {
+      savedMode = localStorage.getItem('spectrum_last_fulltab_mode');
+    } catch (e) {}
+
+    const viewParam = urlParams.get('view');
+    let initialMode = 'calendar';
+    if (viewParam && validModes.includes(viewParam)) {
+      initialMode = viewParam;
+    } else if (savedMode && validModes.includes(savedMode)) {
+      initialMode = savedMode;
+    } else if (validModes.includes(currentFullTabMode)) {
+      initialMode = currentFullTabMode;
+    }
     setFullTabMode(initialMode);
   }
 
@@ -6158,10 +6206,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         setFullTabMode('timetable');
         return;
       } else if (tabId === 'tab-activities') {
-        setFullTabMode(currentFullTabMode && currentFullTabMode !== 'materials' && currentFullTabMode !== 'preferences' && currentFullTabMode !== 'timetable' ? currentFullTabMode : 'calendar');
+        const lastMode = currentFullTabMode && currentFullTabMode !== 'materials' && currentFullTabMode !== 'preferences' && currentFullTabMode !== 'timetable' ? currentFullTabMode : 'calendar';
+        setFullTabMode(lastMode);
         return;
       }
     }
+
+    try {
+      localStorage.setItem('spectrum_last_popup_tab', tabId);
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ lastPopupTab: tabId });
+      }
+    } catch (e) {}
 
     // Popup surface mode
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
@@ -6208,6 +6264,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   function switchActivitiesSubTab(subId) {
     if (!subId) return;
     currentActivitiesSub = subId;
+    try {
+      localStorage.setItem('spectrum_last_popup_subtab', subId);
+    } catch (e) {}
 
     popupRadioPills.forEach(btn => {
       btn.classList.toggle('active', btn.dataset.sub === subId);
@@ -7497,16 +7556,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       activitiesCacheBadge.style.display = 'inline-flex';
     }
 
-    if (requestedTab) {
-      switchTab(requestedTab);
-      if (requestedSub) {
-        const subId = requestedSub.startsWith('sub-') ? requestedSub : `sub-${requestedSub}`;
+    let lastTab = null;
+    let lastSub = null;
+    try {
+      lastTab = localStorage.getItem('spectrum_last_popup_tab');
+      lastSub = localStorage.getItem('spectrum_last_popup_subtab');
+    } catch (e) {}
+
+    if (!isFullTab) {
+      const tabToSwitch = requestedTab || lastTab || 'tab-activities';
+      switchTab(tabToSwitch);
+
+      const subToSwitch = requestedSub || lastSub;
+      if (subToSwitch) {
+        const subId = subToSwitch.startsWith('sub-') ? subToSwitch : `sub-${subToSwitch}`;
         switchActivitiesSubTab(subId);
       }
     }
   } else {
     // No cached courses (Fresh install / New user):
-    switchTab('tab-activities');
+    let lastTab = null;
+    try {
+      lastTab = localStorage.getItem('spectrum_last_popup_tab');
+    } catch (e) {}
+    if (!isFullTab) {
+      switchTab(lastTab || 'tab-activities');
+    }
     initSidebarRail();
 
     // Auto-detect SPeCTRUM: If SPeCTRUM is open & user is logged in, auto-trigger initial sync!
