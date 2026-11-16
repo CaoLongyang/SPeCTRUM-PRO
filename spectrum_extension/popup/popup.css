@@ -2958,6 +2958,44 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
   color: #334155 !important;
 }
 
+[data-theme="dark"] .badge-session-type {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #E2E8F0;
+}
+
+[data-theme="dark"] .badge-session-type.session-lecture,
+[data-theme="dark"] .badge-session-type.type-lecture,
+[data-theme="dark"] .badge-session-type.att-type-lecture {
+  background: rgba(109, 40, 217, 0.2) !important;
+  border: 1px solid rgba(167, 139, 250, 0.4) !important;
+  color: #DDD6FE !important;
+}
+
+[data-theme="dark"] .badge-session-type.session-tutorial,
+[data-theme="dark"] .badge-session-type.type-tutorial,
+[data-theme="dark"] .badge-session-type.att-type-tutorial {
+  background: rgba(157, 23, 77, 0.2) !important;
+  border: 1px solid rgba(244, 114, 182, 0.4) !important;
+  color: #FBCFE8 !important;
+}
+
+[data-theme="dark"] .badge-session-type.session-lab,
+[data-theme="dark"] .badge-session-type.type-lab,
+[data-theme="dark"] .badge-session-type.att-type-lab {
+  background: rgba(14, 116, 144, 0.2) !important;
+  border: 1px solid rgba(34, 211, 238, 0.4) !important;
+  color: #A5F3FC !important;
+}
+
+[data-theme="dark"] .badge-session-type.session-general,
+[data-theme="dark"] .badge-session-type.type-general,
+[data-theme="dark"] .badge-session-type.att-type-general {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #94A3B8 !important;
+}
+
 .badge-tag-status {
   font-size: 9.5px;
   font-weight: 700;

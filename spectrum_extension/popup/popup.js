@@ -2126,16 +2126,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Attendance Type & Keyword Classification Helper
   function getAttendanceTypeInfo(attOrTitle, desc = '') {
+    let subType = '';
     if (typeof attOrTitle === 'object' && attOrTitle !== null) {
-      if (attOrTitle.subType === 'lecture') {
-        return { type: 'lecture', label: 'Lecture', shortLabel: 'Lec', icon: MINI_ICONS.lecture, svgIcon: MINI_ICONS.lecture, badgeClass: 'att-type-lecture' };
+      subType = attOrTitle.subType || '';
+      if (!subType && attOrTitle.id) {
+        if (String(attOrTitle.id).endsWith('_lec')) subType = 'lecture';
+        else if (String(attOrTitle.id).endsWith('_tut')) subType = 'tutorial';
       }
-      if (attOrTitle.subType === 'tutorial') {
-        return { type: 'tutorial', label: 'Tutorial', shortLabel: 'Tut', icon: MINI_ICONS.tutorial, svgIcon: MINI_ICONS.tutorial, badgeClass: 'att-type-tutorial' };
-      }
-      if (attOrTitle.subType === 'lab') {
-        return { type: 'lab', label: 'Lab', shortLabel: 'Lab', icon: MINI_ICONS.lab, svgIcon: MINI_ICONS.lab, badgeClass: 'att-type-lab' };
-      }
+    }
+    if (subType === 'lecture') {
+      return { type: 'lecture', label: 'Lecture', shortLabel: 'Lec', icon: MINI_ICONS.lecture, svgIcon: MINI_ICONS.lecture, badgeClass: 'att-type-lecture' };
+    }
+    if (subType === 'tutorial') {
+      return { type: 'tutorial', label: 'Tutorial', shortLabel: 'Tut', icon: MINI_ICONS.tutorial, svgIcon: MINI_ICONS.tutorial, badgeClass: 'att-type-tutorial' };
+    }
+    if (subType === 'lab') {
+      return { type: 'lab', label: 'Lab', shortLabel: 'Lab', icon: MINI_ICONS.lab, svgIcon: MINI_ICONS.lab, badgeClass: 'att-type-lab' };
+    }
+    if (subType === 'studio') {
+      return { type: 'studio', label: 'Studio', shortLabel: 'Studio', icon: MINI_ICONS.tutorial, svgIcon: MINI_ICONS.tutorial, badgeClass: 'att-type-studio' };
+    }
+    if (subType === 'practical') {
+      return { type: 'practical', label: 'Practical', shortLabel: 'Prac', icon: MINI_ICONS.lab, svgIcon: MINI_ICONS.lab, badgeClass: 'att-type-practical' };
     }
 
     let rawTitle = '';
@@ -2150,7 +2162,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       rawDesc = String(desc || '');
     }
 
-    const combined = (rawTitle + ' ' + rawDesc).toLowerCase();
+    const combined = (rawTitle + ' ' + rawDesc + ' ' + (desc || '')).toLowerCase();
 
     if (/lecture|kuliah/i.test(combined)) {
       return { type: 'lecture', label: 'Lecture', shortLabel: 'Lec', icon: MINI_ICONS.lecture, svgIcon: MINI_ICONS.lecture, badgeClass: 'att-type-lecture' };
@@ -4625,7 +4637,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (isFuture) {
       stateClass = '';
       statusPillHtml = `<span class="att-status-pill pill-upcoming">${t('cards', 'upcoming')}</span>`;
-      stateBadgeHtml = `<span class="att-state-badge state-locked">${t('cards', 'upcoming')}</span>`;
+      stateBadgeHtml = '';
       let upcomingLabel = `${t('cards', 'opensAt')} ${pad(startHour)}:${pad(startMin)}`;
       if (dayDiff < 0) {
         const absDays = Math.abs(dayDiff);
@@ -4636,6 +4648,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       windowSubHtml = `<span class="att-window-sub">${upcomingLabel}</span>`;
       actionBtnHtml = `<a href="${escapeHtml(takeUrl)}" target="_blank" class="btn-att-action btn-att-wireframe" title="Open attendance in SPeCTRUM">${t('cards', 'openSpectrum')}</a>`;
     }
+
+    // Resolve Attendance Type Info (Lecture, Tutorial, Lab, etc.)
+    const rawDescCandidate = session?.desc || sessionData?.desc || sessionData?.title || att.attTitle || '';
+    const typeInfo = getAttendanceTypeInfo(att, rawDescCandidate);
+    const typeLabel = typeInfo.label || 'Class';
+    const typeBadgeClass = typeInfo.badgeClass || 'att-type-general';
+    const typeIconHtml = typeInfo.icon || MINI_ICONS.attendance;
+    const typeBadgeHtml = `<span class="badge-session-type ${typeBadgeClass}">${escapeHtml(typeLabel)}</span>`;
 
     // Extract real attendance stats (persisted from view=5 or computed from sessions)
     const stats = att.summaryStats || (att.pastStats && (att.pastStats.overallPercentage || att.pastStats.takenPercentage) ? {
@@ -4691,6 +4711,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       statusPillHtml,
       stateBadgeHtml,
       rateBadgeHtml,
+      typeLabel,
+      typeBadgeClass,
+      typeBadgeHtml,
+      typeIconHtml,
       code,
       cleanName,
       occNum,
@@ -4711,7 +4735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return `
       <div class="spectrum-card card-attendance attendance-card ${vm.stateClass}" id="att-card-${escapeHtml(vm.rawAttId)}" data-att-id="${escapeHtml(vm.rawAttId)}" data-course-id="${escapeHtml(vm.cid)}" data-date-key="${escapeHtml(vm.dateKey)}">
         <div class="card-bounded-icon icon-box-attendance">
-          ${MINI_ICONS.attendance}
+          ${vm.typeIconHtml || MINI_ICONS.attendance}
         </div>
         <div class="card-content-wrap">
           <div class="att-row-header">
@@ -4721,6 +4745,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               <span class="att-course-title" title="${escapeHtml(vm.cleanName)}">${escapeHtml(vm.cleanName)}</span>
             </div>
             <div class="att-header-right">
+              ${vm.typeBadgeHtml || ''}
               ${vm.stateBadgeHtml}
               ${vm.rateBadgeHtml || ''}
               <span class="att-occ-tag">OCC ${escapeHtml(vm.occNum)}</span>
