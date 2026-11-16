@@ -9,6 +9,10 @@
   <link rel="stylesheet" href="../libs/pptx-vanilla-viewer.styles.css">
 </head>
 <body>
+  <!-- Global Shared Floating Tooltip & Popover Overlays (Active in both Popup and Full-Tab) -->
+  <div id="rail-tooltip-overlay"></div>
+  <div id="matrix-course-popover" class="matrix-course-popover"></div>
+  <div id="attendance-rate-popover" class="attendance-rate-popover"></div>
 
   <!-- ========================================================================
        SURFACE B: EXTENSION POPUP (520px × 600px)
@@ -158,12 +162,6 @@
 
     <!-- Main Popup Content Body -->
     <main class="popup-body">
-      <!-- JS-driven Rail Tooltip Overlay (position:fixed, escapes overflow clipping) -->
-      <div id="rail-tooltip-overlay"></div>
-      <!-- Rich Floating Popover for Course Monograms -->
-      <div id="matrix-course-popover" class="matrix-course-popover"></div>
-      <!-- Rich Floating Popover for Attendance Stats -->
-      <div id="attendance-rate-popover" class="attendance-rate-popover"></div>
       <!-- TAB 1: Activities (Split Sticky-Date Scroll or Course-Grouped) -->
       <section id="tab-activities" class="tab-content active" style="width:100%;height:100%;display:flex;">
         <!-- Split Sticky Scroll View (Active when By: Date) -->

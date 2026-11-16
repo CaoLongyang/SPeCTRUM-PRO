@@ -14808,8 +14808,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Global Event-Delegated Card Tooltip & Popover System ──
   function initCardTooltips() {
-    const railOverlay = document.getElementById('rail-tooltip-overlay');
-    const attPopover = document.getElementById('attendance-rate-popover');
+    function getAttPopover() {
+      let el = document.getElementById('attendance-rate-popover');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'attendance-rate-popover';
+        el.className = 'attendance-rate-popover';
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+
+    function getRailOverlay() {
+      let el = document.getElementById('rail-tooltip-overlay');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'rail-tooltip-overlay';
+        document.body.appendChild(el);
+      }
+      return el;
+    }
 
     let activeAttTarget = null;
     let activeGeneralTarget = null;
@@ -14818,11 +14836,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('mouseover', (e) => {
       // 1. Dedicated Rich Attendance Stats Popover
       const attBadge = e.target.closest('.att-rate-badge, .course-att-rate-badge');
-      if (attBadge && attPopover) {
+      if (attBadge) {
+        const attPopover = getAttPopover();
         if (activeAttTarget === attBadge) return;
         activeAttTarget = attBadge;
         clearTimeout(tooltipTimer);
 
+        const railOverlay = document.getElementById('rail-tooltip-overlay');
         if (railOverlay) railOverlay.classList.remove('visible');
 
         const attended = attBadge.dataset.attended || '0';
@@ -14872,12 +14892,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // 2. General Simple Tooltips (Course title, etc.)
       const target = e.target.closest('[data-tooltip]:not(.has-rail-tooltip):not(.matrix-monogram-btn):not(.att-rate-badge):not(.course-att-rate-badge)');
-      if (!target || !railOverlay) return;
+      if (!target) return;
       if (activeGeneralTarget === target) return;
 
       const text = target.dataset.tooltip || target.getAttribute('title');
       if (!text) return;
 
+      const railOverlay = getRailOverlay();
       activeGeneralTarget = target;
       clearTimeout(tooltipTimer);
 
@@ -14899,14 +14920,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.addEventListener('mouseout', (e) => {
-      if (activeAttTarget && !activeAttTarget.contains(e.relatedTarget)) {
-        if (attPopover) attPopover.classList.remove('visible');
-        activeAttTarget = null;
+      if (activeAttTarget) {
+        if (!e.relatedTarget || !activeAttTarget.contains(e.relatedTarget)) {
+          const attPopover = document.getElementById('attendance-rate-popover');
+          if (attPopover) attPopover.classList.remove('visible');
+          activeAttTarget = null;
+        }
       }
-      if (activeGeneralTarget && !activeGeneralTarget.contains(e.relatedTarget)) {
-        clearTimeout(tooltipTimer);
-        if (railOverlay) railOverlay.classList.remove('visible');
-        activeGeneralTarget = null;
+      if (activeGeneralTarget) {
+        if (!e.relatedTarget || !activeGeneralTarget.contains(e.relatedTarget)) {
+          clearTimeout(tooltipTimer);
+          const railOverlay = document.getElementById('rail-tooltip-overlay');
+          if (railOverlay) railOverlay.classList.remove('visible');
+          activeGeneralTarget = null;
+        }
       }
     });
 
@@ -14926,7 +14953,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     window.addEventListener('scroll', () => {
+      const attPopover = document.getElementById('attendance-rate-popover');
       if (attPopover) attPopover.classList.remove('visible');
+      const railOverlay = document.getElementById('rail-tooltip-overlay');
       if (railOverlay) railOverlay.classList.remove('visible');
       activeAttTarget = null;
       activeGeneralTarget = null;

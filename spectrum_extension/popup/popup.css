@@ -2308,7 +2308,7 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
 .attendance-rate-popover {
   position: fixed !important;
   z-index: 999999 !important;
-  display: none !important;
+  display: none;
   background: #18181B;
   color: #FFFFFF;
   padding: 10px 14px;
@@ -2330,8 +2330,8 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
 
 .attendance-rate-popover.visible {
   display: block !important;
-  opacity: 1;
-  transform: scale(1);
+  opacity: 1 !important;
+  transform: scale(1) !important;
 }
 
 [data-theme="dark"] .attendance-rate-popover {
