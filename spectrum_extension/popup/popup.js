@@ -4354,8 +4354,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!Array.isArray(sessions) || sessions.length === 0) return null;
 
     const now = new Date();
-    const pastSessions = sessions.filter(s => !s.isFuture && s.date && new Date(s.date).getTime() <= now.getTime());
-    const attendedSessions = pastSessions.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || ''));
+    const pastSessions = sessions.filter(s => {
+      if (s.isFuture) return false;
+      let d = s.date instanceof Date ? s.date : (s.date ? new Date(s.date) : null);
+      if (!d || isNaN(d.getTime())) {
+        if (s.dateKey) d = new Date(s.dateKey + 'T23:59:59');
+        else if (s.dateStr) d = (typeof parseMoodleDate === 'function') ? parseMoodleDate(s.dateStr, '', now) : new Date(s.dateStr);
+      }
+      return d && !isNaN(d.getTime()) && d.getTime() <= now.getTime();
+    });
+    const attendedSessions = pastSessions.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || '') || (s.points && /^[12]\s*\/\s*2/.test(s.points)));
 
     const takenCount = pastSessions.length;
     const totalCount = sessions.length;
@@ -4728,11 +4736,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     let rateBadgeHtml = '';
 
     if (stats && (stats.percentageOverAll || stats.percentageOverTaken)) {
-      const allPct = (stats.percentageOverAll || '0.0%').replace(/\.0%$/, '%');
-      const takenPct = (stats.percentageOverTaken || '100.0%').replace(/\.0%$/, '%');
-      const totalSess = stats.totalSessions || (att.sessions ? att.sessions.length : 0);
-      const passedSess = stats.passedSessions != null ? stats.passedSessions : (stats.takenSessions || 0);
+      let totalSess = stats.totalSessions || (att.sessions ? att.sessions.length : 0);
+      let passedSess = stats.passedSessions != null ? stats.passedSessions : (stats.takenSessions || 0);
       let attendedSess = stats.attendedSessions;
+
+      // Always synchronize against actual elapsed sessions in att.sessions (dates on or before now)
+      if (Array.isArray(att.sessions) && att.sessions.length > 0) {
+        const pastList = att.sessions.filter(s => {
+          if (s.isFuture) return false;
+          let d = s.date instanceof Date ? s.date : (s.date ? new Date(s.date) : null);
+          if (!d || isNaN(d.getTime())) {
+            if (s.dateKey) d = new Date(s.dateKey + 'T23:59:59');
+            else if (s.dateStr) d = (typeof parseMoodleDate === 'function') ? parseMoodleDate(s.dateStr, '', now) : new Date(s.dateStr);
+          }
+          return d && !isNaN(d.getTime()) && d.getTime() <= now.getTime();
+        });
+        if (pastList.length > 0) {
+          passedSess = pastList.length;
+          attendedSess = pastList.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || '') || (s.points && /^[12]\s*\/\s*2/.test(s.points))).length;
+        }
+        if (att.sessions.length > totalSess) {
+          totalSess = att.sessions.length;
+        }
+      }
+
       if (attendedSess == null) {
         if (stats.percentageOverTakenVal != null && passedSess > 0) {
           attendedSess = Math.round((stats.percentageOverTakenVal / 100) * passedSess);
@@ -4741,7 +4768,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
-      const takenVal = stats.percentageOverTakenVal != null ? stats.percentageOverTakenVal : parseFloat(takenPct);
+      const takenPct = passedSess > 0 
+        ? ((Math.round((attendedSess / passedSess) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%')
+        : ((stats.percentageOverTaken || '100.0%').replace(/\.0%$/, '%'));
+
+      const allPct = (totalSess > 0 && attendedSess != null)
+        ? ((Math.round((attendedSess / totalSess) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%')
+        : ((stats.percentageOverAll || '0.0%').replace(/\.0%$/, '%'));
+
+      const takenVal = passedSess > 0 ? ((attendedSess / passedSess) * 100) : (stats.percentageOverTakenVal != null ? stats.percentageOverTakenVal : parseFloat(takenPct));
       let toneClass = 'tone-good';
       if (takenVal < 70) toneClass = 'tone-danger';
       else if (takenVal < 80) toneClass = 'tone-warn';
@@ -10044,14 +10079,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         const detectedOccsFormatted = (group.detectedOccs || []).map(cleanOccNumber).filter(Boolean);
 
         const cleanGroupCourse = cleanDisplayCourseName(group.courseName, group.courseCode);
-        const courseStats = group.items.find(a => a.summaryStats)?.summaryStats || (typeof computeFallbackStatsFromSessions === 'function' ? computeFallbackStatsFromSessions(group.items.flatMap(a => a.sessions || [])) : null);
+        const courseSessions = group.items ? group.items.flatMap(a => a.sessions || []) : [];
+        const courseStats = group.items.find(a => a.summaryStats)?.summaryStats || (typeof computeFallbackStatsFromSessions === 'function' ? computeFallbackStatsFromSessions(courseSessions) : null);
         let courseRateBadgeHtml = '';
         if (courseStats && (courseStats.percentageOverAll || courseStats.percentageOverTaken)) {
-          const allPct = (courseStats.percentageOverAll || '0.0%').replace(/\.0%$/, '%');
-          const takenPct = (courseStats.percentageOverTaken || '100.0%').replace(/\.0%$/, '%');
-          const totalSess = courseStats.totalSessions || (group.items ? group.items.flatMap(a => a.sessions || []).length : 0);
-          const passedSess = courseStats.passedSessions != null ? courseStats.passedSessions : (courseStats.takenSessions || 0);
+          let totalSess = courseStats.totalSessions || courseSessions.length;
+          let passedSess = courseStats.passedSessions != null ? courseStats.passedSessions : (courseStats.takenSessions || 0);
           let attendedSess = courseStats.attendedSessions;
+
+          if (courseSessions.length > 0) {
+            const now = new Date();
+            const pastList = courseSessions.filter(s => {
+              if (s.isFuture) return false;
+              let d = s.date instanceof Date ? s.date : (s.date ? new Date(s.date) : null);
+              if (!d || isNaN(d.getTime())) {
+                if (s.dateKey) d = new Date(s.dateKey + 'T23:59:59');
+                else if (s.dateStr) d = (typeof parseMoodleDate === 'function') ? parseMoodleDate(s.dateStr, '', now) : new Date(s.dateStr);
+              }
+              return d && !isNaN(d.getTime()) && d.getTime() <= now.getTime();
+            });
+            if (pastList.length > 0) {
+              passedSess = pastList.length;
+              attendedSess = pastList.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || '') || (s.points && /^[12]\s*\/\s*2/.test(s.points))).length;
+            }
+            if (courseSessions.length > totalSess) {
+              totalSess = courseSessions.length;
+            }
+          }
+
           if (attendedSess == null) {
             if (courseStats.percentageOverTakenVal != null && passedSess > 0) {
               attendedSess = Math.round((courseStats.percentageOverTakenVal / 100) * passedSess);
@@ -10060,7 +10115,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
 
-          const takenVal = courseStats.percentageOverTakenVal != null ? courseStats.percentageOverTakenVal : parseFloat(takenPct);
+          const takenPct = passedSess > 0 
+            ? ((Math.round((attendedSess / passedSess) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%')
+            : ((courseStats.percentageOverTaken || '100.0%').replace(/\.0%$/, '%'));
+
+          const allPct = (totalSess > 0 && attendedSess != null)
+            ? ((Math.round((attendedSess / totalSess) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%')
+            : ((courseStats.percentageOverAll || '0.0%').replace(/\.0%$/, '%'));
+
+          const takenVal = passedSess > 0 ? ((attendedSess / passedSess) * 100) : (courseStats.percentageOverTakenVal != null ? courseStats.percentageOverTakenVal : parseFloat(takenPct));
           let toneClass = 'tone-good';
           if (takenVal < 70) toneClass = 'tone-danger';
           else if (takenVal < 80) toneClass = 'tone-warn';

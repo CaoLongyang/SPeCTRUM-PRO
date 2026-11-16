@@ -1298,50 +1298,31 @@ function parseAttendanceSummaryStats(doc, html = '', sessions = []) {
     if (m) maxPercentage = m.endsWith('%') ? m : m + '%';
   }
 
-  // 3. Fallback derivation from parsed semester sessions if summary table not rendered
-  if (Array.isArray(sessions) && sessions.length > 0 && (takenSessions == null || totalSessions == null || !percentageOverAll)) {
-    const now = new Date();
-    const past = sessions.filter(s => !s.isFuture && s.date && new Date(s.date).getTime() <= now.getTime());
-    const attended = past.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || ''));
-
-    const calcTaken = past.length;
-    const calcTotal = sessions.length;
-    const calcAttended = attended.length;
-
-    if (takenSessions == null) takenSessions = calcTaken;
-    if (totalSessions == null) totalSessions = calcTotal;
-    if (!pointsOverTaken && calcTaken > 0) pointsOverTaken = `${calcAttended * 2} / ${calcTaken * 2}`;
-    if (!percentageOverTaken && calcTaken > 0) percentageOverTaken = `${(Math.round((calcAttended / calcTaken) * 1000) / 10).toFixed(1)}%`;
-    if (!pointsOverAll && calcTotal > 0) pointsOverAll = `${calcAttended * 2} / ${calcTotal * 2}`;
-    if (!percentageOverAll && calcTotal > 0) percentageOverAll = `${(Math.round((calcAttended / calcTotal) * 1000) / 10).toFixed(1)}%`;
-    if (!maxPoints && calcTotal > 0) {
-      const missed = calcTaken - calcAttended;
-      maxPoints = `${(calcTotal * 2) - (missed * 2)} / ${calcTotal * 2}`;
-    }
-    if (!maxPercentage && calcTotal > 0) {
-      const missed = calcTaken - calcAttended;
-      maxPercentage = `${(Math.round((((calcTotal * 2) - (missed * 2)) / (calcTotal * 2)) * 1000) / 10).toFixed(1)}%`;
-    }
-  }
-
-  const percentageOverTakenVal = percentageOverTaken ? parseFloat(percentageOverTaken) : null;
-  const percentageOverAllVal = percentageOverAll ? parseFloat(percentageOverAll) : null;
-  const maxPercentageVal = maxPercentage ? parseFloat(maxPercentage) : null;
-
-  let passedSessions = takenSessions != null ? takenSessions : 0;
-  let attendedSessions = null;
+  // 3. Count actual elapsed sessions from calendar dates (scheduled on or before today)
+  const now = new Date();
+  let pastSessionsList = [];
+  let attendedSessionsList = [];
 
   if (Array.isArray(sessions) && sessions.length > 0) {
-    const now = new Date();
-    const past = sessions.filter(s => !s.isFuture && s.date && new Date(s.date).getTime() <= now.getTime());
-    const attended = past.filter(s => s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || ''));
-    if (attended.length > 0 || past.length > 0) {
-      attendedSessions = attended.length;
-      if (passedSessions === 0 && past.length > 0) {
-        passedSessions = past.length;
+    pastSessionsList = sessions.filter(s => {
+      if (s.isFuture) return false;
+      let d = s.date instanceof Date ? s.date : (s.date ? new Date(s.date) : null);
+      if (!d || isNaN(d.getTime())) {
+        if (s.dateKey) d = new Date(s.dateKey + 'T23:59:59');
+        else if (s.dateStr) d = parseMoodleDate(s.dateStr, '', now);
       }
-    }
+      return d && !isNaN(d.getTime()) && d.getTime() <= now.getTime();
+    });
+
+    attendedSessionsList = pastSessionsList.filter(s => {
+      return s.isPresent || /present|hadir|✔/i.test(s.status || s.statusLabel || '') || (s.points && /^[12]\s*\/\s*2/.test(s.points));
+    });
   }
+
+  // Real passed sessions = number of sessions whose scheduled date has elapsed (<= today)
+  // Moodle's "taken sessions" table row only counts sessions where attendance was recorded, ignoring missed sessions!
+  let passedSessions = pastSessionsList.length > 0 ? pastSessionsList.length : (takenSessions != null ? takenSessions : 0);
+  let attendedSessions = pastSessionsList.length > 0 ? attendedSessionsList.length : null;
 
   if (attendedSessions == null && pointsOverTaken) {
     const m = pointsOverTaken.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
@@ -1351,13 +1332,45 @@ function parseAttendanceSummaryStats(doc, html = '', sessions = []) {
     }
   }
 
-  if (attendedSessions == null && percentageOverTakenVal != null && passedSessions > 0) {
-    attendedSessions = Math.round((percentageOverTakenVal / 100) * passedSessions);
+  if (attendedSessions == null && percentageOverTaken && passedSessions > 0) {
+    attendedSessions = Math.round((parseFloat(percentageOverTaken) / 100) * passedSessions);
   }
 
   if (attendedSessions == null) {
     attendedSessions = passedSessions;
   }
+
+  // When session calendar dates exist, calculate the truthful attendance rate over elapsed/passed sessions
+  if (pastSessionsList.length > 0 && passedSessions > 0) {
+    percentageOverTaken = `${(Math.round((attendedSessions / passedSessions) * 1000) / 10).toFixed(1)}%`;
+    pointsOverTaken = `${attendedSessions * 2} / ${passedSessions * 2}`;
+  }
+
+  if (totalSessions == null && Array.isArray(sessions) && sessions.length > 0) {
+    totalSessions = sessions.length;
+  } else if (Array.isArray(sessions) && sessions.length > totalSessions) {
+    totalSessions = sessions.length;
+  }
+
+  if (!percentageOverAll && totalSessions > 0) {
+    percentageOverAll = `${(Math.round((attendedSessions / totalSessions) * 1000) / 10).toFixed(1)}%`;
+  }
+  if (!pointsOverAll && totalSessions > 0) {
+    pointsOverAll = `${attendedSessions * 2} / ${totalSessions * 2}`;
+  }
+
+  if (!maxPoints && totalSessions > 0 && passedSessions > 0) {
+    const missed = passedSessions - attendedSessions;
+    maxPoints = `${(totalSessions * 2) - (missed * 2)} / ${totalSessions * 2}`;
+  }
+  if (!maxPercentage && totalSessions > 0 && passedSessions > 0) {
+    const missed = passedSessions - attendedSessions;
+    maxPercentage = `${(Math.round((((totalSessions * 2) - (missed * 2)) / (totalSessions * 2)) * 1000) / 10).toFixed(1)}%`;
+  }
+
+  const percentageOverTakenVal = percentageOverTaken ? parseFloat(percentageOverTaken) : null;
+  const percentageOverAllVal = percentageOverAll ? parseFloat(percentageOverAll) : null;
+  const maxPercentageVal = maxPercentage ? parseFloat(maxPercentage) : null;
 
   return {
     takenSessions,
