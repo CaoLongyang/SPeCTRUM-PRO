@@ -563,8 +563,130 @@
     return null;
   }
 
+  // Helper: Extracts clean text with preserved line breaks from unattached DOM trees or fragments
+  function extractTextWithLineBreaks(el) {
+    if (!el) return '';
+    try {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+      clone.querySelectorAll('p, div, li, tr, h1, h2, h3, h4, h5, h6, dt, dd').forEach(block => {
+        block.prepend(document.createTextNode('\n'));
+        block.append(document.createTextNode('\n'));
+      });
+      return (clone.textContent || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .join('\n');
+    } catch (e) {
+      return (el.innerText || el.textContent || '').trim();
+    }
+  }
+
+  // Parse structured exam & test details (Date, Time, Duration, Venue, Format, Topic, Weightage)
+  function parseStructuredTestDetails(rawText = '', title = '') {
+    if (!rawText && !title) return null;
+    let full = `${title || ''}\n${rawText || ''}`
+      .replace(/Skip to main content/gi, '')
+      .replace(/Select activity\s*/gi, '')
+      .replace(/Bulk action\s*/gi, '')
+      .replace(/Activity\s*/gi, '')
+      .trim();
+    if (!full) return null;
+
+    const lines = full.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const result = {
+      title: (title || '').replace(/^(?:Select activity|Bulk edit|Activity)\s+/i, '').trim(),
+      date: '',
+      time: '',
+      duration: '',
+      venue: '',
+      platform: '',
+      format: '',
+      topic: '',
+      weightage: ''
+    };
+
+    // 1. Weightage
+    const wMatch = full.match(/\((\d{1,2}%)\)/) || full.match(/(?:weightage|pemberat|percentage|peratus)[:\s]+(\d{1,2}%)/i) || full.match(/\b(\d{1,2}%)\b/);
+    if (wMatch) result.weightage = wMatch[1];
+
+    // 2. Line-by-line structured scan (handles optional spaces before colon like "Topic : Week 1-7")
+    for (const line of lines) {
+      if (!result.date) {
+        const m = line.match(/^(?:date|tarikh|date of exam|date of test)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.date = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.time) {
+        const m = line.match(/^(?:time open|time|masa buka|masa|waktu|jam)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.time = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.duration) {
+        const m = line.match(/^(?:duration|tempoh|time limit|masa menjawab)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.duration = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.venue) {
+        const m = line.match(/^(?:venue|location|tempat|lokasi|bilik|dewan)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.venue = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.platform) {
+        const m = line.match(/^(?:platform|saluran|portal)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.platform = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.format) {
+        const m = line.match(/^(?:format|type|bentuk soalan|jenis soalan)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.format = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.topic) {
+        const m = line.match(/^(?:topic|scope|syllabus|topik|skop|sukatan|coverage|bab)\s*[:\-–]\s*([^\n\r]+)/i);
+        if (m) result.topic = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+    }
+
+    // 3. Fallbacks from sentence patterns
+    if (!result.date) {
+      const m = full.match(/(?:held on|held|taking place on|takes place on|exam on|test on)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+                full.match(/(?:held on|held|taking place on|takes place on|exam on|test on)\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
+                full.match(/\bopen on\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
+                full.match(/\b(open\s+on\s+[A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i);
+      if (m) result.date = (m[1] || '').replace(/^open\s+on\s+/i, '').trim();
+    }
+
+    if (!result.time) {
+      const m = full.match(/(?:from|dari)\s+([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?\s*(?:until|to|hingga|[-–—])\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i) ||
+                full.match(/\b([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)\s*[-–—to]\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm))\b/i);
+      if (m) result.time = m[1].trim();
+    }
+
+    if (!result.duration) {
+      const m = full.match(/\b(\d+\s*(?:minutes?|mins?|hours?|jam|minit))\b/i);
+      if (m) result.duration = m[1].trim();
+    }
+
+    if (!result.venue && !result.platform) {
+      const m = full.match(/\b(Spectrum\s*Exam|SPeCTRUM|DK\s*\d+|Dewan\s+[^\n\r,]+|Lab\s*\d+|Makmal\s+[^\n\r,]+|Auditorium\s*[^\n\r,]*|Online)\b/i);
+      if (m) result.venue = m[1].trim();
+    }
+
+    if (!result.format) {
+      const m = full.match(/\b(\d+\s*(?:MCQs?|Multiple Choice Questions?|Soalan Objektif))\b/i) ||
+                full.match(/\b(Multiple Choice|MCQs?|Objective|Short Answer|Essay|Struktur|Esei)\b/i);
+      if (m) result.format = m[1].trim();
+    }
+
+    if (!result.topic) {
+      const m = full.match(/\b(?:covers?|covering)\s+((?:Week|Minggu|Chapter|Bab)\s*[\d\s\-–—to,]+)/i);
+      if (m) result.topic = m[1].trim();
+    }
+
+    const hasDetails = Boolean(result.date || result.time || result.duration || result.venue || result.platform || result.format || result.topic || result.weightage);
+    return hasDetails ? result : null;
+  }
+
   // Export onto Window
   window.cleanHtmlForParser = cleanHtmlForParser;
+  window.extractTextWithLineBreaks = extractTextWithLineBreaks;
+  window.parseStructuredTestDetails = parseStructuredTestDetails;
   window.logDiag = logDiag;
   window.formatDateKey = formatDateKey;
   window.formatDateKeyToShort = formatDateKeyToShort;

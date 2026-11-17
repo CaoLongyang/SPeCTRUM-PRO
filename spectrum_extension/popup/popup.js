@@ -14775,25 +14775,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       modalAnnLink.style.display = 'inline-flex';
     }
 
-    // 1. If we already have contentHtml or parsedExam cached
+    // 1. If we already have full contentHtml or parsedExam cached
     let rawText = testItem.contentText || testItem.description || '';
-    let parsed = testItem.parsedExam || parseStructuredTestDetails(rawText || cleanTitle, cleanTitle);
+    let parsed = testItem.parsedExam || (typeof parseStructuredTestDetails === 'function' ? parseStructuredTestDetails(rawText || cleanTitle, cleanTitle) : null);
 
-    if (testItem.contentHtml || (rawText && rawText.length > 25)) {
+    if (testItem.contentHtml || (rawText && rawText.length > 25 && parsed && (parsed.date || parsed.time || parsed.topic || parsed.format))) {
       renderTestModalBody(testItem.contentHtml, rawText, parsed);
       annModal.style.display = 'flex';
       return;
     }
 
-    // 2. Fetch from testItem.url if it targets a module anchor (#module-XXXX) or quiz page
-    const targetUrl = testItem.url || testItem.viewUrl;
-    if (!targetUrl || (!targetUrl.includes('#module-') && !targetUrl.includes('/mod/quiz/'))) {
-      renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
-      annModal.style.display = 'flex';
-      return;
-    }
-
-    // Show loading spinner while fetching
+    // Show loading spinner while fetching full details from course page
     if (modalAnnContent) {
       modalAnnContent.innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px;gap:10px;color:var(--text-secondary);">
@@ -14804,42 +14796,129 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     annModal.style.display = 'flex';
 
+    // 2. Resolve course page and fetch full notice
+    let targetUrl = testItem.url || testItem.viewUrl || '';
+    const courseId = testItem.courseId || 
+                     (targetUrl.match(/id=(\d+)/) || [])[1] || 
+                     (String(testItem.id || '').match(/_(\d+)_/) || [])[1] || '';
+
+    // If targetUrl is missing or just spectrum home, build course URL
+    if (!targetUrl || targetUrl === '#' || (!targetUrl.includes('/course/view.php') && !targetUrl.includes('/mod/'))) {
+      if (courseId) {
+        targetUrl = `https://spectrum.um.edu.my/course/view.php?id=${courseId}`;
+      } else {
+        renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
+        return;
+      }
+    }
+
     try {
       const res = await fetchWithTimeout(targetUrl, { credentials: 'include' }, 12000);
       if (res.ok && !res.url.includes('/login/')) {
         const html = await res.text();
         const origin = 'https://spectrum.um.edu.my';
-        const doc = new DOMParser().parseFromString(`<base href="${origin}/">${html}`, 'text/html');
+        const cleanH = typeof cleanHtmlForParser === 'function' ? cleanHtmlForParser(html) : html;
+        const doc = new DOMParser().parseFromString(`<base href="${origin}/">${cleanH}`, 'text/html');
 
         let introEl = null;
-        if (targetUrl.includes('#module-')) {
-          const modAnchor = (targetUrl.match(/module-\d+/i) || [])[0];
-          if (modAnchor) {
-            const anchorTarget = doc.getElementById(modAnchor);
-            if (anchorTarget) {
-              introEl = anchorTarget.querySelector('.contentwithoutlink, .activity-description, .no-overflow') || anchorTarget;
+        let resolvedAnchor = (targetUrl.match(/module-\d+/i) || [])[0] || testItem.moduleAnchor || '';
+
+        // A. If we have a specific module anchor in URL or item
+        if (resolvedAnchor) {
+          const numOnly = resolvedAnchor.replace(/^module-/, '');
+          introEl = doc.getElementById(resolvedAnchor) ||
+                    doc.querySelector(`[data-id="${numOnly}"]`) ||
+                    doc.querySelector(`[data-cmid="${numOnly}"]`) ||
+                    doc.querySelector(`li#${resolvedAnchor}`) ||
+                    doc.querySelector(`div#${resolvedAnchor}`);
+        }
+
+        // B. If not found by anchor, search by course index link matching cleanTitle
+        if (!introEl) {
+          const cleanT = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanT.length >= 3) {
+            const indexLinks = Array.from(doc.querySelectorAll('.courseindex-link, [data-for="cm_name"], a[href*="#module-"]'));
+            for (const link of indexLinks) {
+              const linkText = (link.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (linkText && (linkText.includes(cleanT) || cleanT.includes(linkText) || (cleanT.startsWith('test') && linkText.startsWith('test')))) {
+                const href = link.getAttribute('href') || '';
+                const m = href.match(/#(module-\d+)/i);
+                if (m) resolvedAnchor = m[1];
+                const lDataId = link.getAttribute('data-id') || (m && m[1].replace('module-', ''));
+                if (lDataId) {
+                  resolvedAnchor = `module-${lDataId}`;
+                  introEl = doc.getElementById(resolvedAnchor) ||
+                            doc.querySelector(`[data-id="${lDataId}"]`) ||
+                            doc.querySelector(`[data-cmid="${lDataId}"]`) ||
+                            doc.querySelector(`li#${resolvedAnchor}`);
+                  if (introEl) break;
+                }
+              }
             }
           }
         }
 
+        // C. If still not found, search all activities/labels in course body matching title
+        if (!introEl) {
+          const cleanT = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const candidates = Array.from(doc.querySelectorAll('.activity, li.label, .modtype_label, .activity-item, li[data-for="cmitem"]'));
+          for (const act of candidates) {
+            const actText = (act.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (actText.includes(cleanT)) {
+              introEl = act;
+              const mId = act.id || act.closest?.('[id^="module-"]')?.id;
+              if (mId && /^module-\d+/i.test(mId)) {
+                resolvedAnchor = mId;
+              } else {
+                const dId = act.getAttribute('data-id') || act.closest?.('[data-id]')?.getAttribute('data-id');
+                if (dId && /^\d+$/.test(dId)) resolvedAnchor = `module-${dId}`;
+              }
+              break;
+            }
+          }
+        }
+
+        // D. Fallback for quiz pages
         if (!introEl && targetUrl.includes('/mod/quiz/')) {
           introEl = doc.querySelector('#intro, .quizinfo, [data-region="activity-information"], .generalbox');
+        }
+
+        // Update target URL and link if we resolved the exact module anchor
+        if (resolvedAnchor && courseId) {
+          testItem.moduleAnchor = resolvedAnchor;
+          testItem.url = `${origin}/course/view.php?id=${courseId}#${resolvedAnchor}`;
+          if (modalAnnLink) {
+            modalAnnLink.href = testItem.url;
+          }
         }
 
         let contentHtml = '';
         let text = '';
         if (introEl) {
-          const clone = introEl.cloneNode(true);
+          const contentContainer = introEl.querySelector('.contentwithoutlink, .activity-description, .no-overflow, .activity-clean') || introEl;
+          const clone = contentContainer.cloneNode(true);
           clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
           contentHtml = clone.innerHTML.trim();
-          text = (clone.innerText || clone.textContent || '').trim();
+          text = (typeof extractTextWithLineBreaks === 'function' ? extractTextWithLineBreaks(clone) : (clone.innerText || clone.textContent || '')).trim();
         }
 
         if (text && text.length > 15) {
-          parsed = parseStructuredTestDetails(text, cleanTitle);
+          parsed = (typeof parseStructuredTestDetails === 'function') ? parseStructuredTestDetails(text, cleanTitle) : null;
           testItem.contentHtml = contentHtml;
           testItem.contentText = text;
           testItem.parsedExam = parsed;
+
+          // Also update the cached entry in assignmentsData
+          const idx = assignmentsData.findIndex(a => a.id === testItem.id || (testItem.title && a.title === testItem.title));
+          if (idx !== -1) {
+            assignmentsData[idx].contentHtml = contentHtml;
+            assignmentsData[idx].contentText = text;
+            assignmentsData[idx].parsedExam = parsed;
+            if (testItem.moduleAnchor) assignmentsData[idx].moduleAnchor = testItem.moduleAnchor;
+            if (testItem.url) assignmentsData[idx].url = testItem.url;
+            chrome.storage.local.set({ cachedAssignments: assignmentsData }).catch(() => {});
+          }
+
           renderTestModalBody(contentHtml, text, parsed);
         } else {
           renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);

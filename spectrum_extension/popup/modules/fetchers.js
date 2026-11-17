@@ -854,11 +854,11 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
           if (descEl) {
             const clone = descEl.cloneNode(true);
             clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
-            contentText = (clone.innerText || clone.textContent || '').trim();
+            contentText = (typeof extractTextWithLineBreaks === 'function' ? extractTextWithLineBreaks(clone) : (clone.innerText || clone.textContent || '')).trim();
             contentHtml = clone.innerHTML.trim();
           }
         }
-        const parsedExam = contentText ? parseStructuredTestDetails(contentText, title) : null;
+        const parsedExam = contentText ? (typeof parseStructuredTestDetails === 'function' ? parseStructuredTestDetails(contentText, title) : null) : null;
 
         // If dueDateStr is still missing, queue for detailed page inspection (limit to 15)
         if (!dueDateStr && itemsToInspect.length < 15) {
@@ -930,10 +930,10 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
               if (introEl) {
                 const clone = introEl.cloneNode(true);
                 clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
-                contentText = (clone.innerText || clone.textContent || '').trim();
+                contentText = (typeof extractTextWithLineBreaks === 'function' ? extractTextWithLineBreaks(clone) : (clone.innerText || clone.textContent || '')).trim();
                 contentHtml = clone.innerHTML.trim();
               }
-              const parsedExam = contentText ? parseStructuredTestDetails(contentText, item.title) : null;
+              const parsedExam = contentText ? (typeof parseStructuredTestDetails === 'function' ? parseStructuredTestDetails(contentText, item.title) : null) : null;
 
               const parsedMeta = calculateAssignmentTiming(dStr, sStr, now, courseName);
               if (isPastSemesterStale(parsedMeta.dueDate, item.title, now, courseName)) {
@@ -977,7 +977,7 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
         // Clean out accessibility text, screen reader skip links, bulk edit checkboxes
         clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
 
-        const text = (clone.innerText || clone.textContent || '').trim();
+        const text = (typeof extractTextWithLineBreaks === 'function' ? extractTextWithLineBreaks(clone) : (clone.innerText || clone.textContent || '')).trim();
         if (!text || text.length < 15) continue;
         const examInfo = extractExamDetails('', text, now);
         if (examInfo && !examInfo.stale) {
@@ -996,7 +996,7 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             ? `${origin}/course/view.php?id=${courseId}#${moduleAnchor}`
             : `${origin}/course/view.php?id=${courseId}`;
 
-          const parsedExam = parseStructuredTestDetails(text, lblTitle);
+          const parsedExam = typeof parseStructuredTestDetails === 'function' ? parseStructuredTestDetails(text, lblTitle) : null;
 
           assignments.push({
             id: `label_exam_${courseId}_${uniqueId}`,
@@ -1067,11 +1067,11 @@ function findCourseModuleAnchor(el, doc, title = '') {
   // 5. Match against Moodle 4 course index links in the sidebar
   if (doc && title && doc.querySelectorAll) {
     const cleanT = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (cleanT.length >= 4) {
+    if (cleanT.length >= 3) {
       const indexLinks = doc.querySelectorAll('.courseindex-link, [data-for="cm_name"], a[href*="#module-"]');
       for (const link of Array.from(indexLinks)) {
         const linkText = (link.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (linkText && (linkText.includes(cleanT) || cleanT.includes(linkText))) {
+        if (linkText && (linkText.includes(cleanT) || cleanT.includes(linkText) || (cleanT.startsWith('test') && linkText.startsWith('test')))) {
           const href = link.getAttribute('href') || '';
           const m = href.match(/#(module-\d+)/i);
           if (m) return m[1];
@@ -1082,7 +1082,26 @@ function findCourseModuleAnchor(el, doc, title = '') {
     }
   }
 
-  // 6. Fallback: closest section container
+  // 6. Search for any activity element in doc whose text matches title
+  if (doc && title && doc.querySelectorAll) {
+    const cleanT = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanT.length >= 3) {
+      const candidates = doc.querySelectorAll('.activity, li.label, .modtype_label, .activity-item, li[data-for="cmitem"]');
+      for (const act of Array.from(candidates)) {
+        const actText = (act.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (actText.includes(cleanT)) {
+          const mId = act.id || act.closest?.('[id^="module-"]')?.id;
+          if (mId && /^module-\d+/i.test(mId)) return mId;
+          const dId = act.getAttribute('data-id') || act.closest?.('[data-id]')?.getAttribute('data-id');
+          if (dId && /^\d+$/.test(dId)) return `module-${dId}`;
+          const cId = act.getAttribute('data-cmid') || act.closest?.('[data-cmid]')?.getAttribute('data-cmid');
+          if (cId && /^\d+$/.test(cId)) return `module-${cId}`;
+        }
+      }
+    }
+  }
+
+  // 7. Fallback: closest section container
   const parentSec = el.closest ? el.closest('[id^="section-"]') : null;
   if (parentSec && parentSec.id) return parentSec.id;
 

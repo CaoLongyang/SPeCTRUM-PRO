@@ -418,7 +418,7 @@
     const targetId = hash.slice(1);
     const numOnly = targetId.replace(/^(?:module|section)-/, '');
 
-    // Synchronize Moodle course index drawer visually (DO NOT call click() as it triggers page redirects to course/view.php)
+    // Synchronize Moodle course index drawer visually
     try {
       const courseIndexLink = document.querySelector(`a.courseindex-link[href*="module-${numOnly}"], a.courseindex-link[data-id="${numOnly}"], a.courseindex-link[href*="#${targetId}"]`);
       if (courseIndexLink) {
@@ -443,6 +443,16 @@
       if (!el) {
         if (attempt < 20) {
           setTimeout(() => attemptScrollAndHighlight(attempt + 1), 250);
+        } else {
+          // If element not in DOM after 5s (e.g. course in "one section per page" mode), check course index link
+          try {
+            const courseIndexLink = document.querySelector(`a.courseindex-link[href*="module-${numOnly}"], a.courseindex-link[data-id="${numOnly}"], a.courseindex-link[href*="#${targetId}"]`);
+            if (courseIndexLink && courseIndexLink.href && courseIndexLink.href.includes('section=')) {
+              if (window.location.href !== courseIndexLink.href) {
+                window.location.replace(courseIndexLink.href);
+              }
+            }
+          } catch (navErr) {}
         }
         return;
       }
@@ -450,15 +460,22 @@
       // 1. Expand any collapsed parent section or accordion in Moodle
       let parent = el.parentElement;
       while (parent && parent !== document.body) {
-        if (parent.classList && parent.classList.contains('collapse') && !parent.classList.contains('show')) {
-          parent.classList.add('show');
+        if (parent.classList) {
+          if (parent.classList.contains('collapse')) {
+            parent.classList.add('show');
+            parent.classList.remove('collapsed', 'collapsing');
+            parent.style.setProperty('display', 'block', 'important');
+            parent.style.setProperty('height', 'auto', 'important');
+            parent.style.setProperty('visibility', 'visible', 'important');
+          }
+          if (parent.classList.contains('collapsed')) {
+            parent.classList.remove('collapsed');
+          }
         }
-        if (parent.classList && parent.classList.contains('collapsed')) {
-          parent.classList.remove('collapsed');
-        }
-        const toggler = parent.querySelector?.('[data-toggle="collapse"][aria-expanded="false"], [data-bs-toggle="collapse"][aria-expanded="false"]');
+        const toggler = parent.querySelector?.('[data-toggle="collapse"][aria-expanded="false"], [data-bs-toggle="collapse"][aria-expanded="false"], .collapse-button.collapsed');
         if (toggler) {
           toggler.setAttribute('aria-expanded', 'true');
+          toggler.classList.remove('collapsed');
         }
         if (parent.hasAttribute?.('aria-expanded') && parent.getAttribute('aria-expanded') === 'false') {
           parent.setAttribute('aria-expanded', 'true');
@@ -466,23 +483,51 @@
         parent = parent.parentElement;
       }
 
-      // 2. Smoothly scroll into view
-      try {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } catch (e) {
-        el.scrollIntoView();
+      const sectionEl = el.closest('.section, .course-section, [data-sectionid], li[id^="section-"]');
+      if (sectionEl) {
+        sectionEl.classList.remove('collapsed');
+        const collapseDiv = sectionEl.querySelector('.content.collapse, .course-section-content.collapse');
+        if (collapseDiv) {
+          collapseDiv.classList.add('show');
+          collapseDiv.classList.remove('collapsed', 'collapsing');
+          collapseDiv.style.setProperty('display', 'block', 'important');
+          collapseDiv.style.setProperty('height', 'auto', 'important');
+        }
+        const btn = sectionEl.querySelector('[data-toggle="collapse"], [data-bs-toggle="collapse"], .collapse-button');
+        if (btn) {
+          btn.setAttribute('aria-expanded', 'true');
+          btn.classList.remove('collapsed');
+        }
       }
 
-      // 3. Highlight with a sleek subtle glow/pulse animation
-      el.style.transition = 'box-shadow 0.4s ease, outline 0.4s ease';
-      el.style.outline = '2px solid #3b82f6';
-      el.style.boxShadow = '0 0 18px rgba(59, 130, 246, 0.45)';
+      // 2. Smoothly scroll into view with header offset compensation and multi-phase retry for layout animations
+      function scrollToTarget() {
+        const headerOffset = 85;
+        const rect = el.getBoundingClientRect();
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const targetY = rect.top + scrollTop - headerOffset;
+        window.scrollTo({
+          top: Math.max(0, targetY),
+          behavior: 'smooth'
+        });
+      }
+
+      requestAnimationFrame(scrollToTarget);
+      setTimeout(scrollToTarget, 150);
+      setTimeout(scrollToTarget, 400);
+
+      // 3. Highlight with prominent sleek blue border and soft badge glow
+      el.style.transition = 'box-shadow 0.3s ease, outline 0.3s ease, background-color 0.3s ease';
+      el.style.outline = '3px solid #3b82f6';
+      el.style.boxShadow = '0 0 24px rgba(59, 130, 246, 0.45)';
       el.style.borderRadius = '8px';
+      el.style.backgroundColor = 'rgba(59, 130, 246, 0.08)';
 
       setTimeout(() => {
         el.style.outline = 'transparent';
         el.style.boxShadow = 'none';
-      }, 4000);
+        el.style.backgroundColor = 'transparent';
+      }, 5000);
     }
 
     attemptScrollAndHighlight();
