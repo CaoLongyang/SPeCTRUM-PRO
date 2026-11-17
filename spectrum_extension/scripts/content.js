@@ -418,12 +418,16 @@
     const targetId = hash.slice(1);
     const numOnly = targetId.replace(/^(?:module|section)-/, '');
 
-    // 0. Trigger Moodle's native course index link in the left drawer if present
+    // Synchronize Moodle course index drawer visually (DO NOT call click() as it triggers page redirects to course/view.php)
     try {
       const courseIndexLink = document.querySelector(`a.courseindex-link[href*="module-${numOnly}"], a.courseindex-link[data-id="${numOnly}"], a.courseindex-link[href*="#${targetId}"]`);
-      if (courseIndexLink && !courseIndexLink.dataset.proTriggered) {
-        courseIndexLink.dataset.proTriggered = 'true';
-        courseIndexLink.click();
+      if (courseIndexLink) {
+        courseIndexLink.classList.add('pageitem', 'active');
+        courseIndexLink.setAttribute('aria-current', 'true');
+        const parentSec = courseIndexLink.closest('.courseindex-section');
+        if (parentSec) {
+          parentSec.classList.remove('collapsed');
+        }
       }
     } catch (e) {}
 
@@ -437,7 +441,7 @@
                  document.querySelector(`a[name="${targetId}"]`);
 
       if (!el) {
-        if (attempt < 16) {
+        if (attempt < 20) {
           setTimeout(() => attemptScrollAndHighlight(attempt + 1), 250);
         }
         return;
@@ -478,7 +482,7 @@
       setTimeout(() => {
         el.style.outline = 'transparent';
         el.style.boxShadow = 'none';
-      }, 3500);
+      }, 4000);
     }
 
     attemptScrollAndHighlight();

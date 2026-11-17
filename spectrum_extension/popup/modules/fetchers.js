@@ -846,6 +846,20 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
           }
         }
 
+        // Extract inline description/instructions if present on course page
+        let contentHtml = '';
+        let contentText = '';
+        if (parentActivity) {
+          const descEl = parentActivity.querySelector('.contentwithoutlink, .activity-description, .no-overflow');
+          if (descEl) {
+            const clone = descEl.cloneNode(true);
+            clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
+            contentText = (clone.innerText || clone.textContent || '').trim();
+            contentHtml = clone.innerHTML.trim();
+          }
+        }
+        const parsedExam = contentText ? parseStructuredTestDetails(contentText, title) : null;
+
         // If dueDateStr is still missing, queue for detailed page inspection (limit to 15)
         if (!dueDateStr && itemsToInspect.length < 15) {
           itemsToInspect.push({ itemId, href, title, statusText });
@@ -862,6 +876,9 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             courseName,
             title,
             url: href,
+            contentHtml: contentHtml || undefined,
+            contentText: contentText || undefined,
+            parsedExam: parsedExam || undefined,
             dueDateStr: dueDateStr || 'No deadline',
             dueDate: parsedMeta.dueDate,
             statusText,
@@ -907,6 +924,17 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
                 }
               }
 
+              let contentHtml = '';
+              let contentText = '';
+              const introEl = itemDoc.querySelector('#intro, .quizinfo, [data-region="activity-information"], .generalbox');
+              if (introEl) {
+                const clone = introEl.cloneNode(true);
+                clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
+                contentText = (clone.innerText || clone.textContent || '').trim();
+                contentHtml = clone.innerHTML.trim();
+              }
+              const parsedExam = contentText ? parseStructuredTestDetails(contentText, item.title) : null;
+
               const parsedMeta = calculateAssignmentTiming(dStr, sStr, now, courseName);
               if (isPastSemesterStale(parsedMeta.dueDate, item.title, now, courseName)) {
                 logDiag('Sync:Assign', `[${courseCode || courseId}] ⏭ Skipping stale detail item "${item.title}"`);
@@ -919,6 +947,9 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
                 courseName,
                 title: item.title,
                 url: item.href,
+                contentHtml: contentHtml || undefined,
+                contentText: contentText || undefined,
+                parsedExam: parsedExam || undefined,
                 dueDateStr: dStr || 'No deadline',
                 dueDate: parsedMeta.dueDate,
                 statusText: sStr,

@@ -4188,20 +4188,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       (assign.url && String(assign.url).includes('/course/view.php'))
     );
 
-    const hasPreviewContent = Boolean(
-      (assign.contentText && assign.contentText.trim().length > 25) ||
-      (assign.contentHtml && assign.contentHtml.trim().length > 30) ||
-      assign.isNotice ||
-      assign.isTestNotice ||
-      (assign.parsedExam && (assign.parsedExam.date || assign.parsedExam.time || assign.parsedExam.venue || assign.parsedExam.format || assign.parsedExam.topic))
-    );
+    const hasTestDetails = isTestNoticeOrDetails(assign);
 
     if (isTest) {
-      if (hasPreviewContent) {
+      if (hasTestDetails) {
         btnText = t('cards', 'details', 'Details →');
         btnClass = 'btn-assign-normal btn-assign-details btn-test-details';
       } else {
-        // Quizzes or tests with NO preview content -> direct View button to module
+        // Routine quizzes with NO special test notice/details -> direct View button to module
         btnText = t('cards', 'view', 'View →');
         btnClass = isOverdue ? 'btn-assign-overdue btn-assign-view' : 'btn-assign-normal btn-assign-view';
       }
@@ -4226,14 +4220,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       submitUrl,
       isTest,
       isNoticeLike,
-      hasPreviewContent
+      hasTestDetails
     };
+  }
+
+  function isTestNoticeOrDetails(assign) {
+    if (!assign) return false;
+    const title = String(assign.title || assign.name || '').trim();
+    const id = String(assign.id || '');
+    const isNotice = Boolean(
+      assign.isNotice || 
+      assign.isTestNotice || 
+      id.startsWith('label_exam_') ||
+      assign.statusText === 'Upcoming Test' ||
+      (assign.url && String(assign.url).includes('/course/view.php'))
+    );
+    // Explicit tests / exams / mid-semesters ALWAYS have details modal
+    const isExplicitTestTitle = /\b(?:test\s*\d+|mid[\s-]?sem|examination|peperiksaan|ujian\s*\d+|final\s*exam)\b/i.test(title);
+    const hasContent = Boolean(
+      (assign.contentText && assign.contentText.trim().length > 25) ||
+      (assign.contentHtml && assign.contentHtml.trim().length > 30) ||
+      (assign.parsedExam && (assign.parsedExam.date || assign.parsedExam.time || assign.parsedExam.venue || assign.parsedExam.format || assign.parsedExam.topic))
+    );
+
+    return isExplicitTestTitle || isNotice || hasContent;
   }
 
   function renderUnifiedAssignmentCardHtml(vm) {
     const isTest = vm && vm.isTest;
     const isNoticeLike = vm && vm.isNoticeLike;
-    const hasPreviewContent = vm && vm.hasPreviewContent;
+    const hasTestDetails = vm && vm.hasTestDetails;
     const cardScopeClass = isTest ? 'scoped-card-test' : 'scoped-card-assignment';
     const cardTypeClass = isTest ? 'card-test' : 'card-assignment assignment-card';
     const iconBoxClass = isTest ? 'icon-box-test' : 'icon-box-assignment';
@@ -4271,7 +4287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               ` : ''}
             </div>
             <div class="assign-footer-right">
-              ${isTest && hasPreviewContent ? `
+              ${isTest && hasTestDetails ? `
                 <button type="button" class="btn-assign-action btn-test-details ${vm.btnClass}" data-test-id="${escapeHtml(vm.rawId)}" title="View test details in SPeCTRUM Pro">
                   ${escapeHtml(vm.btnText)}
                 </button>
@@ -4297,32 +4313,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const item = findTestOrAssignmentById(testId, btnTestDetails.closest('.spectrum-card'));
       if (item) {
         openTestDetailsModal(item);
-      }
-      return;
-    }
-
-    const testCard = e.target.closest('.scoped-card-test, [data-activity-type="test"]');
-    if (testCard && !e.target.closest('.btn-delete-assignment, button, a')) {
-      const testId = testCard.dataset.assignId || testCard.dataset.id;
-      const item = findTestOrAssignmentById(testId, testCard);
-      if (item) {
-        const hasPreview = Boolean(
-          (item.contentText && item.contentText.trim().length > 25) ||
-          (item.contentHtml && item.contentHtml.trim().length > 30) ||
-          item.isNotice ||
-          item.isTestNotice ||
-          (item.parsedExam && (item.parsedExam.date || item.parsedExam.time || item.parsedExam.venue || item.parsedExam.format || item.parsedExam.topic))
-        );
-        if (hasPreview) {
-          e.preventDefault();
-          openTestDetailsModal(item);
-        } else {
-          const directUrl = item.url || item.viewUrl || item.href;
-          if (directUrl && directUrl !== '#') {
-            e.preventDefault();
-            window.open(directUrl, '_blank');
-          }
-        }
       }
       return;
     }
