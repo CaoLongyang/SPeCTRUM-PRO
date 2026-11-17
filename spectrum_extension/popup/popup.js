@@ -173,6 +173,12 @@ const I18N = {
       perCourseOverrides: 'PER-COURSE OVERRIDES',
       resetAll: 'Reset All',
       resetOccCleared: '✔ All OCC preferences cleared!',
+      academicCalendarTitle: 'ACADEMIC CALENDAR & WEEK 1 START',
+      academicCalendarBadge: 'CALIBRATION',
+      academicCalendarDesc: 'Calibrate the start Monday of Week 1 for accurate academic week numbering across your schedule, timeline, and timetable.',
+      sem1Week1Title: 'Semester 1 Week 1 Monday',
+      sem1Week1Desc: 'Default: First Monday of October (5 Oct 2026)',
+      btnResetSem1: 'Reset',
       attAutoTitle: 'ATTENDANCE AUTOMATION',
       attAutoBadgeActive: 'ACTIVE',
       attAutoBadgeOff: 'STANDBY',
@@ -382,6 +388,12 @@ const I18N = {
       perCourseOverrides: 'TETAPAN MENGIKUT KURSUS',
       resetAll: 'Set Semula',
       resetOccCleared: '✔ Semua tetapan OCC telah dikosongkan!',
+      academicCalendarTitle: 'KALENDAR AKADEMIK & MINGGU 1',
+      academicCalendarBadge: 'PENENTUKURAN',
+      academicCalendarDesc: 'Tentukur hari Isnin Minggu 1 untuk penomboran minggu akademik yang tepat pada jadual dan garis masa anda.',
+      sem1Week1Title: 'Isnin Minggu 1 Semester 1',
+      sem1Week1Desc: 'Lalai: Isnin pertama Oktober (5 Okt 2026)',
+      btnResetSem1: 'Set Semula',
       attAutoTitle: 'KEHADIRAN AUTOMATIK',
       attAutoBadgeActive: 'AKTIF',
       attAutoBadgeOff: 'JEDA',
@@ -591,6 +603,12 @@ const I18N = {
       perCourseOverrides: '各课程独立设置',
       resetAll: '重置全部',
       resetOccCleared: '✔ 已重置所有 OCC 设置！',
+      academicCalendarTitle: '学期校历与第一周起始',
+      academicCalendarBadge: '校准',
+      academicCalendarDesc: '校准第一周的起始周一，确保日程表、时间轴与课表的学术周次计数准确无误。',
+      sem1Week1Title: '第一学期第一周周一',
+      sem1Week1Desc: '默认：10月第一个周一 (2026年10月5日)',
+      btnResetSem1: '重置',
       attAutoTitle: '自动签到',
       attAutoBadgeActive: '运行中',
       attAutoBadgeOff: '待命',
@@ -853,7 +871,7 @@ function updatePreferencesTranslations() {
   const prefTab = document.getElementById('tab-filters');
   if (!prefTab) return;
 
-  const occCard = prefTab.querySelector('.pref-card:nth-of-type(1)');
+  const occCard = document.getElementById('group-occ-settings') || prefTab.querySelector('.pref-card:nth-of-type(1)');
   if (occCard) {
     const title = occCard.querySelector('.pref-card-title');
     if (title) title.textContent = t('settings', 'occSettingsTitle');
@@ -877,7 +895,23 @@ function updatePreferencesTranslations() {
     }
   }
 
-  const autoCard = prefTab.querySelector('.pref-card:nth-of-type(2)');
+  const calCard = document.getElementById('group-academic-calendar');
+  if (calCard) {
+    const title = calCard.querySelector('.pref-card-title');
+    if (title) title.textContent = t('settings', 'academicCalendarTitle');
+    const badge = calCard.querySelector('.pref-badge');
+    if (badge) badge.textContent = t('settings', 'academicCalendarBadge');
+    const desc = calCard.querySelector('.pref-card-desc');
+    if (desc) desc.textContent = t('settings', 'academicCalendarDesc');
+    const rowTitle = calCard.querySelector('.pref-row-title');
+    if (rowTitle) rowTitle.textContent = t('settings', 'sem1Week1Title');
+    const rowSub = document.getElementById('pref-sem-start-desc');
+    if (rowSub) rowSub.textContent = t('settings', 'sem1Week1Desc');
+    const btnReset = document.getElementById('btn-reset-sem-start');
+    if (btnReset) btnReset.textContent = t('settings', 'btnResetSem1');
+  }
+
+  const autoCard = document.getElementById('group-attendance-automation') || prefTab.querySelector('.pref-automation-box')?.closest('.pref-card');
   if (autoCard) {
     const title = autoCard.querySelector('.pref-card-title');
     if (title) title.textContent = t('settings', 'attAutoTitle');
