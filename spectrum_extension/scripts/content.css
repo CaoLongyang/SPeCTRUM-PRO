@@ -1,39 +1,196 @@
-/* SPeCTRUM Pro Floating In-Page Widget */
+/* ==========================================================================
+   SPeCTRUM Pro Floating Capsule (36px Black/White Minimalist Design)
+   Spec: State A Resting Capsule, Hanken Grotesk 600 + JetBrains Mono 500,
+   Expand Timing: 220ms cubic-bezier(0, 0, 0.2, 1), Hover Lift Scale: 1.025
+   ========================================================================== */
 #spectrum-pro-floating-btn {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 999999;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  background: linear-gradient(135deg, #0ea5e9 0%, #a855f7 100%);
-  color: white !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  font-size: 13px !important;
-  font-weight: 700 !important;
-  border-radius: 30px;
-  box-shadow: 0 6px 20px rgba(14, 165, 233, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 84px !important; /* Shifted left to comfortably clear official Moodle scroll-to-top button at right: 24px */
+  z-index: 999999 !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  line-height: 36px !important;
+  border-radius: 999px !important;
+  box-sizing: border-box !important;
+  padding: 0 12px 0 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  cursor: pointer !important;
+  user-select: none !important;
   text-decoration: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  transition: transform 220ms cubic-bezier(0, 0, 0.2, 1),
+              box-shadow 220ms cubic-bezier(0, 0, 0.2, 1),
+              background-color 220ms cubic-bezier(0, 0, 0.2, 1),
+              border-color 220ms cubic-bezier(0, 0, 0.2, 1) !important;
 }
 
 #spectrum-pro-floating-btn:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 10px 25px rgba(14, 165, 233, 0.55), 0 4px 10px rgba(0, 0, 0, 0.25);
-  color: white !important;
+  transform: scale(1.025) !important;
 }
 
-#spectrum-pro-floating-btn svg {
-  animation: bounce 2s infinite ease-in-out;
+#spectrum-pro-floating-btn:active {
+  transform: scale(0.97) !important;
 }
 
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
+/* Layers Stack Icon */
+.spectrum-capsule-icon {
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+}
+
+/* Main Brand Title */
+.spectrum-capsule-title {
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.15px !important;
+  line-height: 1 !important;
+  display: inline-block !important;
+}
+
+/* Monospace "PRO" Pill Badge */
+.spectrum-capsule-badge {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.4px !important;
+  padding: 2px 4px 1.5px 4px !important;
+  border-radius: 3.5px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Breathing Idle Sync Dot Indicator */
+.spectrum-capsule-dot {
+  width: 4.5px !important;
+  height: 4.5px !important;
+  border-radius: 50% !important;
+  display: inline-block !important;
+  flex-shrink: 0 !important;
+  margin-left: 1px !important;
+  animation: capsuleSyncPulse 3s infinite ease-in-out !important;
+}
+
+@keyframes capsuleSyncPulse {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+/* --------------------------------------------------------------------------
+   PROFILE 1: PAPER LIGHT PROFILE (HEX: #FFFFFF / #F9F9F9 Surface)
+   Default form: pure white capsule, subtle shadow, dark glyphs, black PRO badge
+   -------------------------------------------------------------------------- */
+#spectrum-pro-floating-btn,
+#spectrum-pro-floating-btn.theme-light {
+  background: #FFFFFF !important;
+  border: 1px solid #E4E4E7 !important;
+  color: #09090B !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+#spectrum-pro-floating-btn:hover,
+#spectrum-pro-floating-btn.theme-light:hover {
+  background: #FAFAFA !important;
+  border-color: #D4D4D8 !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+}
+
+#spectrum-pro-floating-btn .spectrum-capsule-icon,
+#spectrum-pro-floating-btn.theme-light .spectrum-capsule-icon {
+  stroke: #09090B !important;
+}
+
+#spectrum-pro-floating-btn .spectrum-capsule-title,
+#spectrum-pro-floating-btn.theme-light .spectrum-capsule-title {
+  color: #09090B !important;
+}
+
+#spectrum-pro-floating-btn .spectrum-capsule-badge,
+#spectrum-pro-floating-btn.theme-light .spectrum-capsule-badge {
+  background: #09090B !important;
+  color: #FFFFFF !important;
+  border: 1px solid #09090B !important;
+}
+
+#spectrum-pro-floating-btn .spectrum-capsule-dot,
+#spectrum-pro-floating-btn.theme-light .spectrum-capsule-dot {
+  background: #09090B !important;
+}
+
+/* --------------------------------------------------------------------------
+   PROFILE 2: OBSIDIAN DARK PROFILE (HEX: #09090B Surface)
+   Obsidian dark capsule, fine white border, white glyphs, tinted PRO badge
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  #spectrum-pro-floating-btn:not(.theme-light) {
+    background: #121215 !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    color: #FAFAFA !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  #spectrum-pro-floating-btn:not(.theme-light):hover {
+    background: #18181C !important;
+    border-color: rgba(255, 255, 255, 0.24) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  #spectrum-pro-floating-btn:not(.theme-light) .spectrum-capsule-icon {
+    stroke: #FAFAFA !important;
+  }
+
+  #spectrum-pro-floating-btn:not(.theme-light) .spectrum-capsule-title {
+    color: #FAFAFA !important;
+  }
+
+  #spectrum-pro-floating-btn:not(.theme-light) .spectrum-capsule-badge {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #FAFAFA !important;
+    border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  }
+
+  #spectrum-pro-floating-btn:not(.theme-light) .spectrum-capsule-dot {
+    background: #FFFFFF !important;
+  }
+}
+
+#spectrum-pro-floating-btn.theme-dark {
+  background: #121215 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #FAFAFA !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+}
+
+#spectrum-pro-floating-btn.theme-dark:hover {
+  background: #18181C !important;
+  border-color: rgba(255, 255, 255, 0.24) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+#spectrum-pro-floating-btn.theme-dark .spectrum-capsule-icon {
+  stroke: #FAFAFA !important;
+}
+
+#spectrum-pro-floating-btn.theme-dark .spectrum-capsule-title {
+  color: #FAFAFA !important;
+}
+
+#spectrum-pro-floating-btn.theme-dark .spectrum-capsule-badge {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #FAFAFA !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+}
+
+#spectrum-pro-floating-btn.theme-dark .spectrum-capsule-dot {
+  background: #FFFFFF !important;
 }
 
 .spectrum-pro-card-btn {

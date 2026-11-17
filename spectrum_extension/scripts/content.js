@@ -196,25 +196,137 @@
     }
   }
 
-  // Inject floating button if on SPeCTRUM
+  // Inject floating capsule button if on SPeCTRUM
   function injectFloatingButton() {
     if (document.getElementById('spectrum-pro-floating-btn')) return;
     if (!window.location.hostname.includes('spectrum.um.edu.my')) return;
 
     const btn = document.createElement('div');
     btn.id = 'spectrum-pro-floating-btn';
-    const iconUrl = chrome.runtime.getURL('icons/icon48.png');
+    btn.className = 'spectrum-capsule';
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    btn.title = "SPeCTRUM PRO · Click to open pinned panel";
+
+    // Swiss Minimalist Black/White Capsule: Layers Icon + SPeCTRUM + PRO Badge + Idle Sync Dot
     btn.innerHTML = `
-      <img src="${iconUrl}" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;object-fit:contain;background:#090909;box-shadow:0 0 6px rgba(255,255,255,0.15);" alt="SPeCTRUM Pro">
-      <span>SPeCTRUM Pro</span>
+      <svg class="spectrum-capsule-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+        <path d="m22 12.5-8.58 3.91a2 2 0 0 1-1.66 0L2 12.5"/>
+        <path d="m22 17.5-8.58 3.91a2 2 0 0 1-1.66 0L2 17.5"/>
+      </svg>
+      <span class="spectrum-capsule-title">SPeCTRUM</span>
+      <span class="spectrum-capsule-badge">PRO</span>
+      <span class="spectrum-capsule-dot" aria-hidden="true"></span>
     `;
 
-    btn.title = "Click to open pinned SPeCTRUM Pro panel (stays open on page)";
-    btn.addEventListener('click', () => {
-      btn.style.transform = 'scale(0.95)';
-      setTimeout(() => { btn.style.transform = ''; }, 150);
-      toggleFloatingPanel();
+    // Detect theme (Obsidian Dark Profile vs Paper Light Profile)
+    function applyCapsuleTheme() {
+      try {
+        chrome.storage.local.get(['theme', 'cachedTheme'], (res) => {
+          const userTheme = res?.theme || res?.cachedTheme;
+          let isDark = false;
+          if (userTheme === 'dark') {
+            isDark = true;
+          } else if (userTheme === 'light') {
+            isDark = false;
+          } else {
+            // Auto-detect from Moodle page or OS preference
+            const bg = (document.body ? window.getComputedStyle(document.body).backgroundColor : '') || '';
+            const isDarkBg = bg.includes('rgb(13,') || bg.includes('rgb(18,') || bg.includes('rgb(9,') || bg.includes('rgb(24,') || bg.includes('rgb(30,');
+            const isPageDark = (document.body && (document.body.classList.contains('dark-mode') || document.body.classList.contains('theme-dark'))) ||
+                               document.documentElement.getAttribute('data-theme') === 'dark' ||
+                               isDarkBg ||
+                               window.matchMedia('(prefers-color-scheme: dark)').matches;
+            isDark = Boolean(isPageDark);
+          }
+          btn.classList.toggle('theme-dark', isDark);
+          btn.classList.toggle('theme-light', !isDark);
+        });
+      } catch (e) {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        btn.classList.toggle('theme-dark', isDark);
+        btn.classList.toggle('theme-light', !isDark);
+      }
+    }
+    applyCapsuleTheme();
+
+    // Listen for theme changes from extension
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && (changes.theme || changes.cachedTheme)) {
+          applyCapsuleTheme();
+        }
+      });
+    } catch (e) {}
+
+    // Check saved position if user moved it, otherwise default to bottom: 24px; right: 84px;
+    try {
+      const rawPos = localStorage.getItem('spectrum_pro_float_btn_pos');
+      if (rawPos) {
+        const parsed = JSON.parse(rawPos);
+        if (typeof parsed.bottom === 'number' && typeof parsed.right === 'number') {
+          btn.style.setProperty('bottom', `${parsed.bottom}px`, 'important');
+          btn.style.setProperty('right', `${parsed.right}px`, 'important');
+          btn.style.setProperty('left', 'auto', 'important');
+          btn.style.setProperty('top', 'auto', 'important');
+        }
+      }
+    } catch (e) {}
+
+    // Subtle drag-to-reposition physics + Click handler
+    let isDragging = false;
+    let hasMoved = false;
+    let startX = 0, startY = 0;
+    let initRight = 84, initBottom = 24;
+
+    btn.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      hasMoved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = btn.getBoundingClientRect();
+      initRight = window.innerWidth - rect.right;
+      initBottom = window.innerHeight - rect.bottom;
+      btn.style.transition = 'none';
     });
+
+    const onMouseMove = (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMoved = true;
+      }
+      if (hasMoved) {
+        const newRight = Math.max(10, Math.min(window.innerWidth - 140, initRight - dx));
+        const newBottom = Math.max(10, Math.min(window.innerHeight - 50, initBottom - dy));
+        btn.style.setProperty('right', `${newRight}px`, 'important');
+        btn.style.setProperty('bottom', `${newBottom}px`, 'important');
+      }
+    };
+
+    const onMouseUp = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      btn.style.transition = '';
+      if (hasMoved) {
+        const rect = btn.getBoundingClientRect();
+        const finalRight = Math.round(window.innerWidth - rect.right);
+        const finalBottom = Math.round(window.innerHeight - rect.bottom);
+        try {
+          localStorage.setItem('spectrum_pro_float_btn_pos', JSON.stringify({ right: finalRight, bottom: finalBottom }));
+        } catch (err) {}
+      } else {
+        // Normal click
+        btn.style.transform = 'scale(0.96)';
+        setTimeout(() => { btn.style.transform = ''; }, 120);
+        toggleFloatingPanel();
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
 
     (document.body || document.documentElement).appendChild(btn);
   }
