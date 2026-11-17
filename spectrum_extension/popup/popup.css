@@ -556,36 +556,42 @@ body:not(.is-full-tab) .cell-count-badge {
 
 body:not(.is-full-tab) .mini-cal-legend {
   margin-top: 6px !important;
-  font-size: var(--fs-cal-legend, 10.8px) !important;
-  gap: 5px !important;
+  font-size: 9px !important;
+  gap: 2px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 4px 8px 2px 6px !important;
+  padding: 4px 1px 2px 1px !important;
   box-sizing: border-box !important;
+  flex-wrap: nowrap !important;
 }
 
 body:not(.is-full-tab) .legend-item {
-  font-size: var(--fs-cal-legend, 10.8px) !important;
-  gap: 3.5px !important;
+  font-size: 9px !important;
+  gap: 2px !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
 }
 
 body:not(.is-full-tab) .legend-dot {
-  width: 6px !important;
-  height: 6px !important;
+  width: 5px !important;
+  height: 5px !important;
   border-radius: 50% !important;
+  flex-shrink: 0 !important;
 }
 
 body:not(.is-full-tab) .legend-rect.rect-today {
-  width: 7.5px !important;
-  height: 7.5px !important;
+  width: 6.5px !important;
+  height: 6.5px !important;
   border-radius: 2px !important;
+  flex-shrink: 0 !important;
 }
 
 body:not(.is-full-tab) .legend-today-btn {
-  font-size: var(--fs-cal-legend, 10.8px) !important;
-  padding: 1px 4px !important;
-  gap: 3.5px !important;
+  font-size: 9px !important;
+  padding: 1px 2px !important;
+  gap: 2px !important;
+  letter-spacing: -0.2px !important;
 }
 
 body:not(.is-full-tab) .rail-course-matrix-card {
@@ -1996,21 +2002,21 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 5px;
-  font-size: var(--fs-cal-legend, 10.8px);
+  gap: 3px;
+  font-size: var(--fs-cal-legend, 9.8px);
   font-weight: 600;
   color: var(--text-secondary);
   margin-top: 6px;
-  padding: 4px 8px 2px 6px;
+  padding: 4px 4px 2px 4px;
   box-sizing: border-box;
 }
 
 .legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 3.5px;
+  gap: 2.5px;
   white-space: nowrap;
-  font-size: var(--fs-cal-legend, 10.8px);
+  font-size: var(--fs-cal-legend, 9.8px);
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -2018,17 +2024,17 @@ body:not(.is-full-tab) .is-collapsed .dock-badge,
 .legend-today-btn {
   background: transparent;
   border: none;
-  padding: 1px 4px;
+  padding: 1px 3px;
   margin: 0;
   cursor: pointer;
   font-family: inherit;
-  font-size: var(--fs-cal-legend, 10.8px);
+  font-size: var(--fs-cal-legend, 9.8px);
   font-weight: 700;
   color: var(--text-primary);
   border-radius: 4px;
   display: inline-flex;
   align-items: center;
-  gap: 3.5px;
+  gap: 2.5px;
   transition: all 0.15s ease;
 }
 
@@ -4308,6 +4314,12 @@ body.mode-list #btn-cal-next {
   background: var(--signal-assignment-bg);
   border-color: var(--signal-assignment-border);
   color: var(--signal-assignment);
+}
+
+.cal-count-pill.pill-test {
+  background: var(--signal-test-bg);
+  border-color: var(--signal-test-border);
+  color: var(--signal-test);
 }
 
 .cal-count-pill.pill-attendance {

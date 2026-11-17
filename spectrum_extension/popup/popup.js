@@ -5430,12 +5430,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const nowTime = nowZero.getTime();
     const allEvents = [];
 
-    // 1. Assignments
+    // 1. Assignments & Tests
     matchedAssigns.forEach(assign => {
       let d = assign.dueDate ? (assign.dueDate instanceof Date ? assign.dueDate : new Date(assign.dueDate)) : null;
       if (!d || isNaN(d.getTime())) d = new Date();
       allEvents.push({
-        type: 'assignment',
+        type: isTestActivity(assign) ? 'test' : 'assignment',
         date: d,
         dateKey: formatDateKey(d),
         data: assign
@@ -5647,9 +5647,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? (group.events.some(e => e.type === 'assignment') ? 'Deadline' : 'Upcoming') 
             : 'Milestone');
 
-      // Sort cards within group: assignments first, then attendance (ascending by start time), then notices
+      // Sort cards within group: assignments/tests first, then attendance (ascending by start time), then notices
       const sortedEvents = group.events.sort((a, b) => {
-        const order = { assignment: 1, attendance: 2, notice: 3 };
+        const order = { assignment: 1, test: 1, attendance: 2, notice: 3 };
         const diff = (order[a.type] || 9) - (order[b.type] || 9);
         if (diff !== 0) return diff;
         if (a.type === 'attendance') {
@@ -5661,7 +5661,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       const cardsHtml = sortedEvents.map(ev => {
-        if (ev.type === 'assignment') return renderScopedAssignmentCard(ev.data);
+        if (ev.type === 'assignment' || ev.type === 'test') return renderScopedAssignmentCard(ev.data);
         if (ev.type === 'attendance') {
           return renderScopedAttendanceCard(ev.data, ev.date || group.date, ev.dateKey || group.dateKey);
         }
@@ -6347,15 +6347,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
+    const todayKey = formatDateKey(new Date());
     assignmentsData.forEach(assign => {
       if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
+      if (typeof isNonAssessmentItem === 'function' && isNonAssessmentItem(assign)) return;
       if (activeCourse && !isActivityForCourse(assign, activeCourse)) return;
       if (activeCourse && typeof isAssignmentMatchingOcc === 'function' && !isAssignmentMatchingOcc(assign, activeCourse.userOcc)) return;
       const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(assign, new Date()) : assign.dueDate;
       const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
+      const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
       if (d && !isNaN(d.getTime())) {
-        const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
         addEvent(formatDateKey(d), isTest ? 'test' : 'tutorial');
+      } else if (!assign.isSubmitted && !assign.isOverdue) {
+        // Open tasks / quizzes with no deadline appear on Today
+        addEvent(todayKey, isTest ? 'test' : 'tutorial');
       }
     });
 
@@ -6586,9 +6591,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return !isNaN(d.getTime()) && formatDateKey(d) === dateKey;
       }) : [];
 
-      // 2. Assignments & Tests due on this date (Strictly match dateKey, NEVER pull in undated items)
+      const isTargetToday = (dateKey === formatDateKey(new Date()));
+      // 2. Assignments & Tests due on this date (Strictly match dateKey, or open assessments on Today)
       let allAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
         if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
+        if (typeof isNonAssessmentItem === 'function' && isNonAssessmentItem(a)) return false;
         const isTest = isTestActivity(a);
         if (isTest && !showTests) return false;
         if (!isTest && !showTasks) return false;
@@ -6597,6 +6604,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isValidDate = d && !isNaN(d.getTime());
         if (isValidDate) {
           return formatDateKey(d) === dateKey;
+        } else if (isTargetToday && !a.isSubmitted && !a.isOverdue) {
+          // Open assessments without deadline (quizzes/assignments) appear on Today so students can access them
+          return true;
         }
         return false;
       }) : [];
@@ -6807,17 +6817,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (popupSidebarMode === 'calendar') {
       // Calendar mode: count activities on the selected date (filtered by activeCourse if selected)
       const targetDateKey = activeDateFilter || miniCalSelectedDateKey || formatDateKey(new Date());
+      const isTargetToday = (targetDateKey === formatDateKey(new Date()));
       let dAnns = (typeof announcementsData !== 'undefined') ? announcementsData.filter(a => {
         const d = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp || 0);
         return !isNaN(d.getTime()) && formatDateKey(d) === targetDateKey;
       }) : [];
       let dAssigns = (typeof assignmentsData !== 'undefined') ? assignmentsData.filter(a => {
         if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(a)) return false;
+        if (typeof isNonAssessmentItem === 'function' && isNonAssessmentItem(a)) return false;
         const rawD = (typeof resolveAssignmentDate === 'function') ? resolveAssignmentDate(a, new Date()) : a.dueDate;
         const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
         const isValidDate = d && !isNaN(d.getTime());
         if (isValidDate) {
           return formatDateKey(d) === targetDateKey;
+        } else if (isTargetToday && !a.isSubmitted && !a.isOverdue) {
+          return true;
         }
         return false;
       }) : [];
@@ -8857,6 +8871,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderAllActivities() {
     renderAnnouncementsList();
     renderAssignmentsList();
+    renderTestsList();
     renderAttendanceList();
     renderOccBanners();
     updateKpiCards();
@@ -8880,16 +8895,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       const timelineEvents = [];
       const now = new Date();
 
-      const showTasks = chkTlTasks ? chkTlTasks.checked : (chkCalTasks ? chkCalTasks.checked : true);
-      const showAtt = chkTlAtt ? chkTlAtt.checked : (chkCalAtt ? chkCalAtt.checked : true);
-      const showAnn = chkTlAnn ? chkTlAnn.checked : (chkCalAnn ? chkCalAnn.checked : true);
+      const showTasks = (typeof isActivityActive === 'function') ? isActivityActive('tutorial') : (chkTlTasks ? chkTlTasks.checked : true);
+      const showTests = (typeof isActivityActive === 'function') ? isActivityActive('test') : true;
+      const showAtt = (typeof isActivityActive === 'function') ? isActivityActive('attendance') : (chkTlAtt ? chkTlAtt.checked : true);
+      const showAnn = (typeof isActivityActive === 'function') ? isActivityActive('notice') : (chkTlAnn ? chkTlAnn.checked : true);
 
-      // 1. Assignments
-      if (showTasks) {
-        logDiag('Timeline:Eval', `Evaluating ${assignmentsData.length} total assignment(s) for timeline track (showTasks: true)...`);
+      // 1. Assignments & Tests
+      if (showTasks || showTests) {
+        logDiag('Timeline:Eval', `Evaluating ${assignmentsData.length} total assessments for timeline track (showTasks: ${showTasks}, showTests: ${showTests})...`);
         let tlTasksAdded = 0;
         assignmentsData.forEach(assign => {
           if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
+          if (typeof isNonAssessmentItem === 'function' && isNonAssessmentItem(assign)) return;
+          const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
+          if (isTest && !showTests) return;
+          if (!isTest && !showTasks) return;
           const rawD = resolveAssignmentDate(assign, now);
           const isPending = !assign.isSubmitted && !assign.isOverdue;
           const d = (rawD instanceof Date) ? rawD : (rawD ? new Date(rawD) : null);
@@ -8898,13 +8918,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (isValidDate) {
             assign.dueDate = d;
             const ev = {
-              type: 'assignment',
+              type: isTest ? 'test' : 'assignment',
               date: d,
               dateKey: formatDateKey(d),
-              title: assign.title || 'Assignment',
+              title: assign.title || (isTest ? 'Test' : 'Assignment'),
               courseCode: assign.courseCode || assign.courseName || 'Course',
               status: assign.isSubmitted ? 'submitted' : (assign.isOverdue ? 'overdue' : (assign.isDueSoon ? 'duesoon' : 'upcoming')),
-              statusLabel: assign.badgeLabel || 'Assignment',
+              statusLabel: assign.badgeLabel || (isTest ? 'Test' : 'Assignment'),
               url: assign.url,
               obj: assign
             };
@@ -8912,15 +8932,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             tlTasksAdded++;
             logDiag('Timeline:Task', `[${ev.courseCode}] "${ev.title}" -> Date: ${ev.dateKey} (${ev.status})`);
           } else if (isPending) {
-            // Truly open task with no deadline or timing: anchor to Today
+            // Truly open task/test with no deadline or timing: anchor to Today
             const ev = {
-              type: 'assignment',
+              type: isTest ? 'test' : 'assignment',
               date: new Date(now.getTime()),
               dateKey: formatDateKey(now),
-              title: assign.title || 'Task',
+              title: assign.title || (isTest ? 'Test' : 'Task'),
               courseCode: assign.courseCode || assign.courseName || 'Course',
               status: 'upcoming',
-              statusLabel: '⏳ Open Task',
+              statusLabel: assign.badgeLabel || (isTest ? '⏳ Open Test' : '⏳ Open Task'),
               url: assign.url,
               obj: assign
             };
@@ -9467,7 +9487,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
               <div class="kanban-col-cards">
                 ${day.events.map(ev => {
-                  if (ev.type === 'assignment' || ev.type === 'task') return renderAssignmentCardHtml(ev.obj || ev);
+                  if (ev.type === 'assignment' || ev.type === 'task' || ev.type === 'test') return renderAssignmentCardHtml(ev.obj || ev);
                   if (ev.type === 'attendance' || ev.type === 'att') return renderTimelineAttendanceCardHtml(ev);
                   return renderAnnouncementCardHtml(ev.obj || ev);
                 }).join('')}
@@ -10814,14 +10834,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       dayEvents.push(ev);
     }
 
-    const showTasks = chkCalTasks ? chkCalTasks.checked : (chkTlTasks ? chkTlTasks.checked : true);
-    const showAtt = chkCalAtt ? chkCalAtt.checked : (chkTlAtt ? chkTlAtt.checked : true);
-    const showAnn = chkCalAnn ? chkCalAnn.checked : (chkTlAnn ? chkTlAnn.checked : true);
+    const showTasks = (typeof isActivityActive === 'function') ? isActivityActive('tutorial') : (chkCalTasks ? chkCalTasks.checked : true);
+    const showTests = (typeof isActivityActive === 'function') ? isActivityActive('test') : true;
+    const showAtt = (typeof isActivityActive === 'function') ? isActivityActive('attendance') : (chkCalAtt ? chkCalAtt.checked : true);
+    const showAnn = (typeof isActivityActive === 'function') ? isActivityActive('notice') : (chkCalAnn ? chkCalAnn.checked : true);
 
-    // 1. Assignments
-    if (showTasks) {
+    // 1. Assignments & Tests
+    if (showTasks || showTests) {
       assignmentsData.forEach(assign => {
         if (typeof isAssignmentHidden === 'function' && isAssignmentHidden(assign)) return;
+        if (typeof isNonAssessmentItem === 'function' && isNonAssessmentItem(assign)) return;
+        const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
+        if (isTest && !showTests) return;
+        if (!isTest && !showTasks) return;
+
         const d = resolveAssignmentDate(assign, new Date());
         const isPending = !assign.isSubmitted && !assign.isOverdue;
         const isValidDate = d && !isNaN(d.getTime());
@@ -10831,13 +10857,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           const key = formatDateKey(d);
           const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
           addCalEvent(key, {
-            type: 'task',
+            type: isTest ? 'test' : 'task',
             id: assign.id,
             title: assign.title,
             courseCode: assign.courseCode || assign.courseName,
             status: assign.isSubmitted ? 'submitted' : (assign.isOverdue ? 'overdue' : 'pending'),
-            badgeClass: assign.badgeClass || 'upcoming',
-            badgeLabel: assign.badgeLabel || 'Assignment',
+            badgeClass: assign.badgeClass || (isTest ? 'badge-test' : 'upcoming'),
+            badgeLabel: assign.badgeLabel || (isTest ? 'Test' : 'Assignment'),
             timeStr,
             url: assign.url,
             obj: assign
@@ -10845,13 +10871,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (isPending) {
           const todayKey = formatDateKey(new Date());
           addCalEvent(todayKey, {
-            type: 'task',
+            type: isTest ? 'test' : 'task',
             id: assign.id,
             title: assign.title,
             courseCode: assign.courseCode || assign.courseName,
             status: 'pending',
-            badgeClass: 'badge-due-warning',
-            badgeLabel: '⏳ Open Task',
+            badgeClass: isTest ? 'badge-test' : 'badge-due-warning',
+            badgeLabel: assign.badgeLabel || (isTest ? '⏳ Open Test' : '⏳ Open Task'),
             timeStr: 'No deadline',
             url: assign.url,
             obj: assign
@@ -11024,11 +11050,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isSelected = dateKey === calSelectedDateKey;
 
     const taskCount = events.filter(e => e.type === 'task').length;
+    const testCount = events.filter(e => e.type === 'test').length;
     const attCount = events.filter(e => e.type === 'att').length;
     const annCount = events.filter(e => e.type === 'ann').length;
 
     const labelNotice = currentLang === 'zh' ? '通知' : (currentLang === 'bm' ? 'Notis' : 'Notice');
-    const labelAssign = currentLang === 'zh' ? '作业' : (currentLang === 'bm' ? 'Tugasan' : 'Assignment');
+    const labelAssign = currentLang === 'zh' ? '作业' : (currentLang === 'bm' ? 'Tugasan' : 'Tutorial');
+    const labelTest = currentLang === 'zh' ? '测验' : (currentLang === 'bm' ? 'Ujian' : 'Test');
     const labelAtt = currentLang === 'zh' ? '签到' : (currentLang === 'bm' ? 'Kehadiran' : 'Attendance');
 
     let pillsHtml = '';
@@ -11045,6 +11073,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="cal-count-pill pill-assignment">
           <span class="pill-left">${MINI_ICONS.assignment} ${labelAssign}</span>
           <span class="pill-count">${taskCount}</span>
+        </div>
+      `;
+    }
+    if (testCount > 0) {
+      pillsHtml += `
+        <div class="cal-count-pill pill-test">
+          <span class="pill-left">${MINI_ICONS.test} ${labelTest}</span>
+          <span class="pill-count">${testCount}</span>
         </div>
       `;
     }
@@ -11138,7 +11174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         sidebarList.innerHTML = `<div style="text-align:center;padding:24px 12px;color:var(--text-muted);font-size:12px;">${t('cards', 'noActToday')}</div>`;
       } else {
         sidebarList.innerHTML = uniqueEvents.map(ev => {
-          if (ev.type === 'task' || ev.type === 'assignment') return renderAssignmentCardHtml(ev.obj || ev);
+          if (ev.type === 'task' || ev.type === 'assignment' || ev.type === 'test') return renderAssignmentCardHtml(ev.obj || ev);
           if (ev.type === 'att' || ev.type === 'attendance') return renderTimelineAttendanceCardHtml(ev, dateKey);
           return renderAnnouncementCardHtml(ev.obj || ev);
         }).join('');
@@ -11154,7 +11190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         calAgendaList.innerHTML = `<div style="text-align:center;padding:18px;color:var(--text-muted);font-size:11.5px;">${t('cards', 'noActToday')}</div>`;
       } else {
         calAgendaList.innerHTML = uniqueEvents.map(ev => {
-          if (ev.type === 'task' || ev.type === 'assignment') return renderAssignmentCardHtml(ev.obj || ev);
+          if (ev.type === 'task' || ev.type === 'assignment' || ev.type === 'test') return renderAssignmentCardHtml(ev.obj || ev);
           if (ev.type === 'att' || ev.type === 'attendance') return renderTimelineAttendanceCardHtml(ev);
           return renderAnnouncementCardHtml(ev.obj || ev);
         }).join('');
@@ -11294,7 +11330,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               type: isTest ? 'test' : 'task',
               id: assign.id,
               title: assign.title,
-              courseCode: assign.courseCode || assign.courseName || 'Task',
+              courseCode: assign.courseCode || assign.courseName || (isTest ? 'Test' : 'Task'),
               courseName: assign.courseName || '',
               status: assign.isSubmitted ? 'submitted' : (assign.isOverdue ? 'overdue' : (assign.isDueSoon ? 'duesoon' : 'upcoming')),
               badgeLabel: assign.badgeLabel || (isTest ? 'Test' : 'Assignment'),
@@ -11304,6 +11340,20 @@ document.addEventListener('DOMContentLoaded', async () => {
               obj: assign
             });
           }
+        } else if (isTargetToday && !assign.isSubmitted && !assign.isOverdue) {
+          events.push({
+            type: isTest ? 'test' : 'task',
+            id: assign.id,
+            title: assign.title,
+            courseCode: assign.courseCode || assign.courseName || (isTest ? 'Test' : 'Task'),
+            courseName: assign.courseName || '',
+            status: 'upcoming',
+            badgeLabel: assign.badgeLabel || (isTest ? '⏳ Open Test' : '⏳ Open Task'),
+            date: now,
+            dateKey: todayKey,
+            url: assign.url,
+            obj: assign
+          });
         }
       });
     }
@@ -11599,12 +11649,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const nowTime = nowZero.getTime();
       const allEvents = [];
 
-      // 1. Assignments
+      // 1. Assignments & Tests
       matchedAssigns.forEach(assign => {
         let d = assign.dueDate ? (assign.dueDate instanceof Date ? assign.dueDate : new Date(assign.dueDate)) : null;
         if (!d || isNaN(d.getTime())) d = new Date();
         allEvents.push({
-          type: 'assignment',
+          type: isTestActivity(assign) ? 'test' : 'assignment',
           date: d,
           dateKey: formatDateKey(d),
           data: assign
@@ -11821,9 +11871,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const dotClass = isToday ? 'spine-node-dot is-today is-active' : 'spine-node-dot';
 
-        // Sort cards within group: assignments (1), attendance (2, ascending by start time), notices (3)
+        // Sort cards within group: assignments/tests (1), attendance (2, ascending by start time), notices (3)
         const sortedEvents = group.events.sort((a, b) => {
-          const order = { assignment: 1, attendance: 2, notice: 3 };
+          const order = { assignment: 1, test: 1, attendance: 2, notice: 3 };
           const diff = (order[a.type] || 9) - (order[b.type] || 9);
           if (diff !== 0) return diff;
           if (a.type === 'attendance') {
@@ -11835,7 +11885,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         const cardsHtml = sortedEvents.map(ev => {
-          if (ev.type === 'assignment') return renderScopedAssignmentCard(ev.data);
+          if (ev.type === 'assignment' || ev.type === 'test') return renderScopedAssignmentCard(ev.data);
           if (ev.type === 'attendance') {
             return renderScopedAttendanceCard(ev.data, ev.date || group.date, ev.dateKey || group.dateKey);
           }
@@ -11961,7 +12011,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
       } else {
         cardsHtml = dayEvents.map(ev => {
-          if (ev.type === 'task' || ev.type === 'assignment') return renderScopedAssignmentCard(ev.obj || ev);
+          if (ev.type === 'task' || ev.type === 'assignment' || ev.type === 'test') return renderScopedAssignmentCard(ev.obj || ev);
           if (ev.type === 'att' || ev.type === 'attendance') {
             return renderScopedAttendanceCard({
               att: ev.obj || ev.att || ev,
