@@ -7619,7 +7619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     defaultOcc: '',
     courseOccs: {},
     autoAttendanceEnabled: true,
-    autoAttendanceInterval: 15,
+    autoAttendanceInterval: 240,
     hiddenAttendanceIds: [],
     hiddenAttendanceDetails: {},
     hiddenAssignmentIds: [],
@@ -7648,7 +7648,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     chkAutoAttendance.addEventListener('change', syncAutoAttBadge);
   }
   if (selAttendanceInterval) {
-    selAttendanceInterval.value = String(stored.autoAttendanceInterval || 15);
+    selAttendanceInterval.value = normalizeResyncOption(stored.autoAttendanceInterval);
     selAttendanceInterval.addEventListener('change', syncAutoAttBadge);
   }
   syncAutoAttBadge();
@@ -7675,15 +7675,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // The safety re-scan select only offers a fixed set of cadences; map any
+  // legacy value (10/15/30/60 minutes) onto the closest supported option.
+  function normalizeResyncOption(value) {
+    const options = [60, 120, 240, 360, 720];
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n) || n <= 0) return '240';
+    const match = options.find(opt => opt >= n);
+    return String(match || options[options.length - 1]);
+  }
+
+  function formatResyncLabel(minutes) {
+    const n = parseInt(minutes, 10) || 240;
+    return n % 60 === 0 ? `${n / 60}h` : `${n}m`;
+  }
+
+  function formatClock(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderNextCheckLabel() {
+    const el = document.getElementById('pref-next-check-label');
+    if (!el) return;
+    const enabled = chkAutoAttendance ? chkAutoAttendance.checked : true;
+    if (!enabled) {
+      el.textContent = 'Paused';
+      return;
+    }
+    chrome.storage.local.get({ nextAttendanceCheckAt: 0, nextAttendanceCheckReason: '' }).then(stored => {
+      const at = stored.nextAttendanceCheckAt || 0;
+      if (!at || at <= Date.now()) {
+        el.textContent = 'On next class';
+        return;
+      }
+      const deltaMin = Math.round((at - Date.now()) / 60000);
+      const when = deltaMin <= 120 ? `in ${Math.max(1, deltaMin)} min` : `at ${formatClock(at)}`;
+      el.textContent = stored.nextAttendanceCheckReason === 'resync'
+        ? `Re-scan ${when}`
+        : `Class check ${when}`;
+    }).catch(() => { el.textContent = 'On next class'; });
+  }
+
   function syncAutoAttBadge() {
     const badge = document.getElementById('pref-auto-att-badge');
     const bullet = document.getElementById('pref-auto-att-bullet');
     const isEnabled = chkAutoAttendance ? chkAutoAttendance.checked : true;
-    const intervalVal = selAttendanceInterval ? selAttendanceInterval.value : '15';
+    const intervalVal = selAttendanceInterval ? selAttendanceInterval.value : '240';
     if (badge) {
       if (isEnabled) {
         badge.className = 'pref-badge pref-badge-active';
-        badge.textContent = `DAEMON ACTIVE (${intervalVal}m)`;
+        badge.textContent = `DAEMON ACTIVE (${formatResyncLabel(intervalVal)} RESCAN)`;
         if (bullet) bullet.className = 'pref-bullet pref-bullet-green';
       } else {
         badge.className = 'pref-badge pref-badge-subtle';
@@ -7691,6 +7733,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (bullet) bullet.className = 'pref-bullet pref-bullet-black';
       }
     }
+    renderNextCheckLabel();
   }
 
   // MIME Pills UI Synchronization
@@ -7802,7 +7845,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     const autoAtt = chkAutoAttendance ? chkAutoAttendance.checked : true;
-    const autoInt = selAttendanceInterval ? parseInt(selAttendanceInterval.value, 10) : 15;
+    const autoInt = selAttendanceInterval ? parseInt(selAttendanceInterval.value, 10) : 240;
 
     await chrome.storage.local.set({
       materialsOnly: chkMaterialsOnly ? chkMaterialsOnly.checked : (stored.materialsOnly !== false),
@@ -7818,6 +7861,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     chrome.runtime.sendMessage({ type: 'UPDATE_ALARM_SETTINGS' });
+    setTimeout(renderNextCheckLabel, 600);
 
     const saveIcon = `<svg viewBox="0 0 24 24" class="footer-icon-svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>`;
     btnSaveSettings.innerHTML = `${saveIcon} <span>✔ Saved!</span>`;
@@ -8619,6 +8663,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (changes.lastAttendanceCheckTime || changes.autoAttendanceEnabled || changes.autoAttendanceInterval) {
       if (typeof updateAttendanceDaemonStatus === 'function') updateAttendanceDaemonStatus();
+      renderNextCheckLabel();
+    }
+    if (changes.nextAttendanceCheckAt || changes.nextAttendanceCheckReason) {
+      renderNextCheckLabel();
     }
 
     if (shouldRerender) {
@@ -13883,13 +13931,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const stored = await chrome.storage.local.get({
         autoAttendanceEnabled: true,
-        autoAttendanceInterval: 15,
-        lastAttendanceCheckTime: 0
+        autoAttendanceInterval: 240,
+        lastAttendanceCheckTime: 0,
+        nextAttendanceCheckAt: 0
       });
 
       const isEnabled = stored.autoAttendanceEnabled !== false;
-      const interval = stored.autoAttendanceInterval || 15;
       const lastCheck = stored.lastAttendanceCheckTime || 0;
+      const nextCheck = stored.nextAttendanceCheckAt || 0;
 
       if (!isEnabled) {
         dots.forEach(d => d.className = d.id.includes('fulltab') ? 'fulltab-daemon-dot disabled' : 'att-daemon-dot disabled');
@@ -13897,17 +13946,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         times.forEach(t => t.textContent = '· Off in Preferences');
       } else {
         dots.forEach(d => d.className = d.id.includes('fulltab') ? 'fulltab-daemon-dot' : 'att-daemon-dot');
-        labels.forEach(l => l.textContent = `Auto-Attendance: ACTIVE (${interval}m)`);
+        labels.forEach(l => l.textContent = 'Auto-Attendance: ACTIVE');
         const summary = stored.lastAttendanceCheckSummary;
         times.forEach(t => {
+          const nextNote = nextCheck > Date.now() ? ` · Next ${formatClock(nextCheck)}` : '';
           if (lastCheck > 0) {
             let note = '';
             if (summary && summary.newlySubmitted > 0) {
               note = ` (${summary.newlySubmitted} auto-marked)`;
             }
-            t.textContent = `· Checked ${formatTimeAgo(lastCheck)}${note}`;
+            t.textContent = `· Checked ${formatTimeAgo(lastCheck)}${note}${nextNote}`;
           } else {
-            t.textContent = '· Scheduled';
+            t.textContent = nextCheck > Date.now() ? `· Next ${formatClock(nextCheck)}` : '· Scheduled';
           }
         });
       }

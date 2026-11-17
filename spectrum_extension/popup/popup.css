@@ -8660,6 +8660,13 @@ body.is-full-tab .pref-courses-list {
   text-transform: uppercase;
 }
 
+.pref-interval-note {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary, #52525b);
+}
+
 .pref-select {
   font-family: var(--font-sans);
   font-size: 11px;

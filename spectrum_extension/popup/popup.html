@@ -773,7 +773,7 @@
               </div>
               <div class="pref-row-text">
                 <div class="pref-row-title">Enable auto-attendance check</div>
-                <div class="pref-row-subtitle" id="pref-auto-att-sub">Runs periodically in background and marks attendance</div>
+                <div class="pref-row-subtitle" id="pref-auto-att-sub">Wakes up exactly when a class check-in opens, then marks attendance</div>
               </div>
             </div>
             <label class="pref-switch">
@@ -782,15 +782,20 @@
             </label>
           </div>
 
-          <!-- Interval Sub-Row -->
+          <!-- Safety re-scan Sub-Row -->
           <div class="pref-interval-row">
-            <span class="pref-interval-label">Validation Cadence:</span>
+            <span class="pref-interval-label">Safety re-scan:</span>
             <select id="sel-attendance-interval" class="pref-select">
-              <option value="10">Every 10 minutes</option>
-              <option value="15" selected>Every 15 minutes (Standard)</option>
-              <option value="30">Every 30 minutes</option>
               <option value="60">Every 1 hour</option>
+              <option value="120">Every 2 hours</option>
+              <option value="240" selected>Every 4 hours (Recommended)</option>
+              <option value="360">Every 6 hours</option>
+              <option value="720">Every 12 hours</option>
             </select>
+          </div>
+          <div class="pref-interval-row">
+            <span class="pref-interval-label">Next check:</span>
+            <span class="pref-interval-note" id="pref-next-check-label">Calculating…</span>
           </div>
         </div>
 

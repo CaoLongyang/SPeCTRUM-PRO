@@ -1,8 +1,31 @@
 // SPeCTRUM Pro Background Service Worker (Manifest V3)
-// Handles periodic background auto-attendance checks and desktop notifications
+// Handles deadline-driven background auto-attendance checks and desktop notifications
 
 const ALARM_NAME = 'spectrum_auto_attendance_check';
-const DEFAULT_INTERVAL_MINUTES = 15;
+
+// ---------------------------------------------------------------------------
+// Scheduling model
+// ---------------------------------------------------------------------------
+// The daemon used to wake up on a fixed tick (every 15 min) and re-scan every
+// course page, 24 hours a day, whether or not any class was running. That is
+// hundreds of page loads per day for a handful of useful ones.
+//
+// Instead we now derive the *next* moment a check can possibly be useful from
+// the cached session list, and arm a single one-shot alarm for exactly that
+// moment. Everything else is idle. A sparse "safety re-scan" cadence covers
+// sessions the cache does not know about yet (newly created sessions, timetable
+// changes, a freshly installed extension, ...).
+const DEFAULT_RESYNC_MINUTES = 240;     // fallback cadence when nothing is scheduled
+const MIN_RESYNC_MINUTES = 60;          // never re-scan more often than this
+const WAKE_BEFORE_START_MINUTES = 4;    // check-in window opens at start-5, wake just inside it
+const RETRY_GAP_MINUTES = 2;            // re-check while a session is still open
+const MAX_ATTEMPTS_PER_SESSION = 8;
+const MAX_SLEEP_MINUTES = 720;          // upper bound on any single sleep (see note below)
+const MIN_SLEEP_SECONDS = 30;           // never arm an alarm in the past
+
+// MAX_SLEEP_MINUTES doubles as the "discovery" cadence: even when the cache
+// knows about a class three days out, we still wake at least twice a day and
+// run a full scan, so sessions created after the last sync get picked up.
 
 // Persistent Background Logger (Saved to chrome.storage.local for visibility in SPeCTRUM Pro UI)
 async function appendBackgroundLog(category, message, details = null) {
@@ -41,36 +64,230 @@ chrome.runtime.onStartup.addListener(async () => {
   await setupAlarm();
 });
 
-// Setup or update alarm based on user preferences
-async function setupAlarm() {
-  const settings = await chrome.storage.local.get({
+// ---------------------------------------------------------------------------
+// Deadline computation
+// ---------------------------------------------------------------------------
+
+// Local "YYYY-MM-DD" (the popup stores dateKey in local time).
+function localDateKey(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+// Midnight (local) of a "YYYY-MM-DD" key, or null when unparseable.
+function startOfDayMs(dateKey) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ''));
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+}
+
+function resyncIntervalMinutes(value) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_RESYNC_MINUTES;
+  return Math.max(MIN_RESYNC_MINUTES, n);
+}
+
+// Cached sessions do not carry a sessid, so identify them by slot.
+function sessionSlotKey(courseId, sess, attendanceId = '') {
+  return `${courseId}|${attendanceId}|${sess?.dateKey || ''}|${sess?.time || sess?.dateStr || ''}`;
+}
+
+function isSessionDone(sess, submissions, courseId) {
+  if (!sess) return true;
+  if (sess.isPresent || sess.statusType === 'present') return true;
+  const marked = submissions[`course_${courseId}`];
+  if (marked && sess.dateKey && marked === sess.dateKey) return true;
+  return false;
+}
+
+// When should the next check fire? Returns { when, reason } where `when` is an
+// absolute epoch timestamp, or { when: 0, reason: 'disabled' }.
+async function computeNextCheckPlan(nowMs = Date.now()) {
+  const store = await chrome.storage.local.get({
     autoAttendanceEnabled: true,
-    autoAttendanceInterval: DEFAULT_INTERVAL_MINUTES
+    autoAttendanceInterval: DEFAULT_RESYNC_MINUTES,
+    cachedAttendances: [],
+    lastAttendanceSubmissions: {},
+    attendanceRetryState: {}
   });
 
-  await chrome.alarms.clear(ALARM_NAME);
+  if (store.autoAttendanceEnabled === false) return { when: 0, reason: 'disabled' };
 
-  if (settings.autoAttendanceEnabled) {
-    const interval = Math.max(5, parseInt(settings.autoAttendanceInterval, 10) || DEFAULT_INTERVAL_MINUTES);
-    chrome.alarms.create(ALARM_NAME, {
-      delayInMinutes: 2,
-      periodInMinutes: interval
+  const retryState = store.attendanceRetryState || {};
+  const submissions = store.lastAttendanceSubmissions || {};
+  const todayKey = localDateKey(new Date(nowMs));
+  const resyncMs = resyncIntervalMinutes(store.autoAttendanceInterval) * 60000;
+
+  let best = null;
+  const consider = (when, reason) => {
+    if (!Number.isFinite(when)) return;
+    if (!best || when < best.when) best = { when, reason };
+  };
+
+  for (const ca of store.cachedAttendances || []) {
+    if (!ca) continue;
+    const courseId = String(ca.courseId || '');
+    const sessions = Array.isArray(ca.sessions) ? ca.sessions.slice() : [];
+
+    // A cached active session may not have a matching row in `sessions`.
+    if (ca.activeSession && ca.activeSession.takeUrl) {
+      sessions.push({
+        dateKey: todayKey,
+        time: ca.activeSession.time,
+        statusType: 'active'
+      });
+    }
+
+    for (const sess of sessions) {
+      if (!sess) continue;
+      if (isSessionDone(sess, submissions, courseId)) continue;
+
+      const slot = sessionSlotKey(courseId, sess, ca.id);
+      const state = retryState[slot] || { attempts: 0, last: 0 };
+      if (state.attempts >= MAX_ATTEMPTS_PER_SESSION) continue;
+
+      const range = parseSessionTimeRange(sess.time || sess.dateStr || '');
+      const dayMs = startOfDayMs(sess.dateKey);
+
+      // Unknown schedule: we cannot plan ahead. Fall back to a bounded retry,
+      // but only for slots that are actually scheduled for today.
+      if (!range || dayMs == null) {
+        if (dayMs == null || localDateKey(new Date(dayMs)) !== todayKey) continue;
+        const at = state.attempts > 0 ? Math.max(state.last + RETRY_GAP_MINUTES * 60000, nowMs) : nowMs;
+        consider(at, 'unknown-time');
+        continue;
+      }
+
+      const windowOpen = dayMs + (range.startMin - 5) * 60000;
+      const windowClose = dayMs + (range.endMin + 15) * 60000;
+
+      if (nowMs > windowClose) continue;              // slot already missed
+
+      if (nowMs < windowOpen) {
+        // Wake just inside the window instead of before it.
+        consider(dayMs + (range.startMin - WAKE_BEFORE_START_MINUTES) * 60000, 'session');
+      } else if (state.attempts > 0 && nowMs - state.last < RETRY_GAP_MINUTES * 60000) {
+        consider(state.last + RETRY_GAP_MINUTES * 60000, 'retry');
+      } else {
+        consider(nowMs, 'active');
+      }
+    }
+  }
+
+  const target = best ? best.when : nowMs + resyncMs;
+  let when = Math.max(target, nowMs + MIN_SLEEP_SECONDS * 1000);
+  let reason = best ? best.reason : 'resync';
+
+  const cap = nowMs + MAX_SLEEP_MINUTES * 60000;
+  if (when > cap) {
+    when = cap;
+    reason = 'resync';   // capped sleeps are plain re-evaluations, not class checks
+  }
+
+  return { when, reason };
+}
+
+// Arm the single one-shot alarm for the next useful moment.
+async function scheduleNextCheck() {
+  try {
+    await chrome.alarms.clear(ALARM_NAME);
+    const plan = await computeNextCheckPlan();
+
+    if (!plan.when) {
+      await chrome.storage.local.set({ nextAttendanceCheckAt: 0, nextAttendanceCheckReason: 'disabled' });
+      return { scheduled: false, reason: plan.reason };
+    }
+
+    await chrome.alarms.create(ALARM_NAME, { when: plan.when });
+    await chrome.storage.local.set({
+      nextAttendanceCheckAt: plan.when,
+      nextAttendanceCheckReason: plan.reason
     });
-    console.log(`[SPeCTRUM Pro] Background attendance monitor active every ${interval} minutes.`);
-  } else {
-    console.log('[SPeCTRUM Pro] Background attendance monitor disabled in settings.');
+
+    const inMinutes = Math.max(0, Math.round((plan.when - Date.now()) / 60000));
+    console.log(`[SPeCTRUM Pro] Next attendance check in ${inMinutes} min (${plan.reason}).`);
+    return { scheduled: true, when: plan.when, reason: plan.reason };
+  } catch (err) {
+    console.warn('[SPeCTRUM Pro] Failed to schedule attendance check:', err?.message || err);
+    return { scheduled: false, reason: 'error' };
   }
 }
 
-// Ensure alarm is scheduled on initial worker startup
+// Count an attempt for every slot whose check-in window is open right now, so a
+// session that never yields a submittable form cannot be retried forever.
+async function bumpRetryState(nowMs = Date.now()) {
+  try {
+    const store = await chrome.storage.local.get({
+      cachedAttendances: [],
+      attendanceRetryState: {}
+    });
+    const state = store.attendanceRetryState || {};
+    let changed = false;
+
+    for (const key of Object.keys(state)) {
+      if (!state[key] || nowMs - (state[key].last || 0) > 3 * 86400000) {
+        delete state[key];
+        changed = true;
+      }
+    }
+
+    for (const ca of store.cachedAttendances || []) {
+      if (!ca) continue;
+      const courseId = String(ca.courseId || '');
+      for (const sess of Array.isArray(ca.sessions) ? ca.sessions : []) {
+        if (!sess || sess.isPresent || sess.statusType === 'present') continue;
+        const range = parseSessionTimeRange(sess.time || sess.dateStr || '');
+        const dayMs = startOfDayMs(sess.dateKey);
+        if (!range || dayMs == null) continue;
+        if (nowMs < dayMs + (range.startMin - 5) * 60000) continue;
+        if (nowMs > dayMs + (range.endMin + 15) * 60000) continue;
+
+        const slot = sessionSlotKey(courseId, sess, ca.id);
+        const cur = state[slot] || { attempts: 0, last: 0 };
+        state[slot] = { attempts: cur.attempts + 1, last: nowMs };
+        changed = true;
+      }
+    }
+
+    if (changed) await chrome.storage.local.set({ attendanceRetryState: state });
+  } catch (err) {
+    console.warn('[SPeCTRUM Pro] Failed to update retry state:', err?.message || err);
+  }
+}
+
+// Setup or update the schedule based on user preferences
+async function setupAlarm() {
+  return scheduleNextCheck();
+}
+
+// Ensure the alarm is armed on initial worker startup
 setupAlarm();
 
-// Alarm listener
+// Alarm listener: run one check, then re-arm for the next deadline.
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === ALARM_NAME) {
-    console.log('[SPeCTRUM Pro] Alarm triggered: Running background attendance check...');
+  if (alarm.name !== ALARM_NAME) return;
+  console.log('[SPeCTRUM Pro] Deadline reached: running background attendance check...');
+  try {
     await runBackgroundAttendanceCheck();
+  } catch (err) {
+    console.warn('[SPeCTRUM Pro] Scheduled check failed:', err?.message || err);
+  } finally {
+    await scheduleNextCheck();
   }
+});
+
+// Re-arm as soon as the cached session list (or the preference) changes, so a
+// freshly synced timetable takes effect immediately instead of after the
+// current sleep window.
+let rescheduleTimer = null;
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (!changes.cachedAttendances && !changes.autoAttendanceEnabled && !changes.autoAttendanceInterval) return;
+  if (rescheduleTimer) clearTimeout(rescheduleTimer);
+  rescheduleTimer = setTimeout(() => {
+    rescheduleTimer = null;
+    scheduleNextCheck();
+  }, 2000);
 });
 
 // Keyboard shortcuts command listener
@@ -106,7 +323,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === 'CHECK_ATTENDANCE_NOW') {
-    runBackgroundAttendanceCheck().then((results) => sendResponse({ success: true, results }));
+    runBackgroundAttendanceCheck()
+      .then(async (results) => {
+        await scheduleNextCheck();
+        sendResponse({ success: true, results });
+      })
+      .catch((err) => sendResponse({ success: false, error: err?.message || String(err) }));
     return true;
   }
   if (message.type === 'SUBMIT_ATTENDANCE_FORM') {
@@ -665,6 +887,8 @@ async function runBackgroundAttendanceCheck() {
         console.log(`[SPeCTRUM Pro] Background attendance check skipped for course ${courseId}:`, err?.message || err);
       }
     }
+
+    await bumpRetryState();
 
     await chrome.storage.local.set({
       lastAttendanceCheckSummary: {
