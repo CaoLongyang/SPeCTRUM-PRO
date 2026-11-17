@@ -4084,7 +4084,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const occFormatted = formatOccTag(rawOcc);
 
     // 2. Assignment Title
-    const title = assign.title || assign.name || 'Assignment';
+    const title = (assign.title || assign.name || 'Assignment').replace(/^(?:Select activity|Bulk edit|Activity)\s+/i, '').trim();
 
     // 3. Unified Bottom Baseline (Indicator · Token · Timestamp · Inline 28px CTA)
     let dotClass = 'dot-upcoming';
@@ -4188,9 +4188,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       (assign.url && String(assign.url).includes('/course/view.php'))
     );
 
+    const hasPreviewContent = Boolean(
+      (assign.contentText && assign.contentText.trim().length > 25) ||
+      (assign.contentHtml && assign.contentHtml.trim().length > 30) ||
+      assign.isNotice ||
+      assign.isTestNotice ||
+      (assign.parsedExam && (assign.parsedExam.date || assign.parsedExam.time || assign.parsedExam.venue || assign.parsedExam.format || assign.parsedExam.topic))
+    );
+
     if (isTest) {
-      btnText = t('cards', 'details', 'Details →');
-      btnClass = 'btn-assign-normal btn-assign-details btn-test-details';
+      if (hasPreviewContent) {
+        btnText = t('cards', 'details', 'Details →');
+        btnClass = 'btn-assign-normal btn-assign-details btn-test-details';
+      } else {
+        // Quizzes or tests with NO preview content -> direct View button to module
+        btnText = t('cards', 'view', 'View →');
+        btnClass = isOverdue ? 'btn-assign-overdue btn-assign-view' : 'btn-assign-normal btn-assign-view';
+      }
     } else if (isNoticeLike && !isSubmitted) {
       btnText = t('cards', 'view', 'View →');
       btnClass = isOverdue ? 'btn-assign-overdue btn-assign-view' : 'btn-assign-normal btn-assign-view';
@@ -4211,13 +4225,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnText,
       submitUrl,
       isTest,
-      isNoticeLike
+      isNoticeLike,
+      hasPreviewContent
     };
   }
 
   function renderUnifiedAssignmentCardHtml(vm) {
     const isTest = vm && vm.isTest;
     const isNoticeLike = vm && vm.isNoticeLike;
+    const hasPreviewContent = vm && vm.hasPreviewContent;
     const cardScopeClass = isTest ? 'scoped-card-test' : 'scoped-card-assignment';
     const cardTypeClass = isTest ? 'card-test' : 'card-assignment assignment-card';
     const iconBoxClass = isTest ? 'icon-box-test' : 'icon-box-assignment';
@@ -4255,12 +4271,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               ` : ''}
             </div>
             <div class="assign-footer-right">
-              ${isTest ? `
+              ${isTest && hasPreviewContent ? `
                 <button type="button" class="btn-assign-action btn-test-details ${vm.btnClass}" data-test-id="${escapeHtml(vm.rawId)}" title="View test details in SPeCTRUM Pro">
                   ${escapeHtml(vm.btnText)}
                 </button>
               ` : `
-                <a href="${escapeHtml(vm.submitUrl)}" target="_blank" class="btn-assign-action ${vm.btnClass}" title="${isNoticeLike ? 'View details in SPeCTRUM' : 'Open assignment submission in SPeCTRUM'}">
+                <a href="${escapeHtml(vm.submitUrl)}" target="_blank" class="btn-assign-action ${vm.btnClass}" title="${isNoticeLike ? 'View details in SPeCTRUM' : 'Open in SPeCTRUM'}">
                   ${escapeHtml(vm.btnText)}
                 </a>
               `}
@@ -4287,11 +4303,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const testCard = e.target.closest('.scoped-card-test, [data-activity-type="test"]');
     if (testCard && !e.target.closest('.btn-delete-assignment, button, a')) {
-      e.preventDefault();
       const testId = testCard.dataset.assignId || testCard.dataset.id;
       const item = findTestOrAssignmentById(testId, testCard);
       if (item) {
-        openTestDetailsModal(item);
+        const hasPreview = Boolean(
+          (item.contentText && item.contentText.trim().length > 25) ||
+          (item.contentHtml && item.contentHtml.trim().length > 30) ||
+          item.isNotice ||
+          item.isTestNotice ||
+          (item.parsedExam && (item.parsedExam.date || item.parsedExam.time || item.parsedExam.venue || item.parsedExam.format || item.parsedExam.topic))
+        );
+        if (hasPreview) {
+          e.preventDefault();
+          openTestDetailsModal(item);
+        } else {
+          const directUrl = item.url || item.viewUrl || item.href;
+          if (directUrl && directUrl !== '#') {
+            e.preventDefault();
+            window.open(directUrl, '_blank');
+          }
+        }
       }
       return;
     }
@@ -14508,14 +14539,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     return found || null;
   }
 
+  const TEST_META_ICONS = {
+    date: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+    time: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    duration: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 10"/></svg>`,
+    venue: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    format: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+    topic: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    weightage: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`
+  };
+
   function parseStructuredTestDetails(rawText = '', title = '') {
     if (!rawText && !title) return null;
-    const full = `${title || ''}\n${rawText || ''}`.trim();
+    let full = `${title || ''}\n${rawText || ''}`
+      .replace(/Skip to main content/gi, '')
+      .replace(/Select activity\s*/gi, '')
+      .replace(/Bulk action\s*/gi, '')
+      .trim();
     if (!full) return null;
 
     const lines = full.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const result = {
-      title: title || '',
+      title: (title || '').replace(/^(?:Select activity|Bulk edit|Activity)\s+/i, '').trim(),
       date: '',
       time: '',
       duration: '',
@@ -14564,10 +14609,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 3. Fallbacks from sentence patterns
     if (!result.date) {
-      const m = full.match(/(?:held on|takes place on|taking place on|on|pada)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+      const m = full.match(/(?:held on|held|taking place on|takes place on|exam on|test on)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+                full.match(/(?:held on|held|taking place on|takes place on|exam on|test on)\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
                 full.match(/\bopen on\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
-                full.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\s+20\d{2})?)/i);
-      if (m) result.date = m[1].trim();
+                full.match(/\b(open\s+on\s+[A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i);
+      if (m) result.date = (m[1] || '').replace(/^open\s+on\s+/i, '').trim();
     }
 
     if (!result.time) {
@@ -14593,7 +14639,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (!result.topic) {
-      const m = full.match(/\b((?:Week|Minggu|Chapter|Bab|Modules?)\s*[\d\s\-–—to,]+)/i);
+      const m = full.match(/\b(?:covers?|covering)\s+((?:Week|Minggu|Chapter|Bab)\s*[\d\s\-–—to,]+)/i);
       if (m) result.topic = m[1].trim();
     }
 
@@ -14604,36 +14650,117 @@ document.addEventListener('DOMContentLoaded', async () => {
   function buildTestMetaGridHtml(parsed) {
     if (!parsed) return '';
     const chips = [];
-    if (parsed.date) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📅 DATE</span><span class="test-meta-val">${escapeHtml(parsed.date)}</span></div>`);
-    if (parsed.time) chips.push(`<div class="test-meta-card"><span class="test-meta-label">⏰ TIME</span><span class="test-meta-val">${escapeHtml(parsed.time)}</span></div>`);
-    if (parsed.duration) chips.push(`<div class="test-meta-card"><span class="test-meta-label">⏳ DURATION</span><span class="test-meta-val">${escapeHtml(parsed.duration)}</span></div>`);
-    if (parsed.venue || parsed.platform) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📍 VENUE / PLATFORM</span><span class="test-meta-val">${escapeHtml(parsed.venue || parsed.platform)}</span></div>`);
-    if (parsed.format) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📝 FORMAT</span><span class="test-meta-val">${escapeHtml(parsed.format)}</span></div>`);
-    if (parsed.topic) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📚 TOPIC</span><span class="test-meta-val">${escapeHtml(parsed.topic)}</span></div>`);
-    if (parsed.weightage) chips.push(`<div class="test-meta-card"><span class="test-meta-label">⚖️ WEIGHTAGE</span><span class="test-meta-val">${escapeHtml(parsed.weightage)}</span></div>`);
+    if (parsed.date) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.date} DATE</span><span class="test-meta-val">${escapeHtml(parsed.date)}</span></div>`);
+    if (parsed.time) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.time} TIME</span><span class="test-meta-val">${escapeHtml(parsed.time)}</span></div>`);
+    if (parsed.duration) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.duration} DURATION</span><span class="test-meta-val">${escapeHtml(parsed.duration)}</span></div>`);
+    if (parsed.venue || parsed.platform) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.venue} VENUE / PLATFORM</span><span class="test-meta-val">${escapeHtml(parsed.venue || parsed.platform)}</span></div>`);
+    if (parsed.format) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.format} FORMAT</span><span class="test-meta-val">${escapeHtml(parsed.format)}</span></div>`);
+    if (parsed.topic) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.topic} TOPIC</span><span class="test-meta-val">${escapeHtml(parsed.topic)}</span></div>`);
+    if (parsed.weightage) chips.push(`<div class="test-meta-card"><span class="test-meta-label">${TEST_META_ICONS.weightage} WEIGHTAGE</span><span class="test-meta-val">${escapeHtml(parsed.weightage)}</span></div>`);
 
     if (chips.length === 0) return '';
     return `<div class="test-meta-grid">${chips.join('')}</div>`;
   }
 
-  function renderTestModalBody(contentHtml, rawText, parsed) {
+  function renderTestModalBody(contentHtml = '', rawText = '', parsed = null) {
     if (!modalAnnContent) return;
-    const gridHtml = buildTestMetaGridHtml(parsed);
-    let bodyHtml = '';
+
+    // Sanitize any residual Moodle boilerplate
     if (contentHtml) {
-      bodyHtml = `<div class="test-content-html">${contentHtml}</div>`;
-    } else if (rawText) {
-      bodyHtml = `<div class="test-content-body">${escapeHtml(rawText)}</div>`;
-    } else {
-      bodyHtml = `<p style="color:var(--text-muted);font-size:12px;">No written notice attached to this test item.</p>`;
+      contentHtml = contentHtml
+        .replace(/Skip to main content/gi, '')
+        .replace(/Select activity\s*/gi, '')
+        .trim();
     }
+    if (rawText) {
+      rawText = rawText
+        .replace(/Skip to main content/gi, '')
+        .replace(/Select activity\s*/gi, '')
+        .trim();
+    }
+
+    const gridHtml = buildTestMetaGridHtml(parsed);
+    const hasSummary = Boolean(gridHtml);
+
+    let originalHtml = '';
+    if (contentHtml && contentHtml.length > 20) {
+      originalHtml = `<div class="test-content-html">${contentHtml}</div>`;
+    } else if (rawText) {
+      originalHtml = `<div class="test-content-body">${escapeHtml(rawText)}</div>`;
+    } else {
+      originalHtml = `<p style="color:var(--text-muted);font-size:12px;">No written notice attached to this test item.</p>`;
+    }
+
+    const origLabel = (currentLang === 'zh') ? '原始内容' : ((currentLang === 'bm') ? 'Notis Asal' : 'Original Notice');
+    const summaryLabel = (currentLang === 'zh') ? '要点速览' : ((currentLang === 'bm') ? 'Perkara Utama' : 'Key Points');
 
     modalAnnContent.innerHTML = `
       <div class="test-details-container">
-        ${gridHtml}
-        ${bodyHtml}
+        ${hasSummary ? `
+          <div class="test-modal-nav">
+            <div class="test-view-toggle" id="test-view-toggle">
+              <button type="button" class="test-toggle-btn active" data-view="original">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                <span>${origLabel}</span>
+              </button>
+              <button type="button" class="test-toggle-btn" data-view="summary">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="9 11 12 14 22 4"></polyline>
+                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                </svg>
+                <span>${summaryLabel}</span>
+              </button>
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="test-view-pane test-original-view" style="display:block;">
+          ${originalHtml}
+        </div>
+
+        ${hasSummary ? `
+          <div class="test-view-pane test-summary-view" style="display:none;">
+            ${gridHtml}
+            ${(contentHtml || rawText) ? `
+              <div style="margin-top:16px;padding-top:14px;border-top:1px dashed var(--border-hairline);opacity:0.9;">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;letter-spacing:0.5px;">Context / Notes</div>
+                ${originalHtml}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
       </div>
     `;
+
+    // Hook up view toggle clicks
+    const toggleContainer = modalAnnContent.querySelector('#test-view-toggle');
+    if (toggleContainer) {
+      const origPane = modalAnnContent.querySelector('.test-original-view');
+      const summPane = modalAnnContent.querySelector('.test-summary-view');
+      const buttons = toggleContainer.querySelectorAll('.test-toggle-btn');
+
+      buttons.forEach(btn => {
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const view = btn.dataset.view;
+          buttons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          if (view === 'summary') {
+            if (origPane) origPane.style.display = 'none';
+            if (summPane) summPane.style.display = 'block';
+          } else {
+            if (origPane) origPane.style.display = 'block';
+            if (summPane) summPane.style.display = 'none';
+          }
+        });
+      });
+    }
   }
 
   async function openTestDetailsModal(testItem) {
@@ -14642,8 +14769,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const courseCode = testItem.courseCode || cleanSingleCourseCode(testItem.courseName) || 'TEST';
     if (modalAnnCourseBadge) modalAnnCourseBadge.textContent = courseCode;
     if (modalAnnDate) modalAnnDate.textContent = testItem.dueDateStr || '';
-    if (modalAnnTitle) modalAnnTitle.textContent = testItem.title || 'Test Details';
-    if (modalAnnAuthor) modalAnnAuthor.textContent = (currentLang === 'zh') ? '📝 考试 / 测试详情' : ((currentLang === 'bm') ? '📝 Butiran Ujian / Peperiksaan' : '📝 Test / Exam Details');
+
+    const cleanTitle = (testItem.title || 'Test Details').replace(/^(?:Select activity|Bulk edit|Activity)\s+/i, '').trim();
+    if (modalAnnTitle) modalAnnTitle.textContent = cleanTitle;
+
+    const authorText = (currentLang === 'zh') ? '测试 / 考试通知' : ((currentLang === 'bm') ? 'Notis Ujian / Peperiksaan' : 'Test / Exam Notice');
+    if (modalAnnAuthor) {
+      modalAnnAuthor.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;">${TEST_META_ICONS.format} ${authorText}</span>`;
+    }
 
     const viewSpectrumText = (currentLang === 'zh') ? '在 SPeCTRUM 查看 ↗' : ((currentLang === 'bm') ? 'Lihat di SPeCTRUM ↗' : 'View on SPeCTRUM ↗');
     if (modalAnnLink) {
@@ -14654,7 +14787,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 1. If we already have contentHtml or parsedExam cached
     let rawText = testItem.contentText || testItem.description || '';
-    let parsed = testItem.parsedExam || parseStructuredTestDetails(rawText || testItem.title, testItem.title);
+    let parsed = testItem.parsedExam || parseStructuredTestDetails(rawText || cleanTitle, cleanTitle);
 
     if (testItem.contentHtml || (rawText && rawText.length > 25)) {
       renderTestModalBody(testItem.contentHtml, rawText, parsed);
@@ -14662,10 +14795,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // 2. If no content cached yet, show loading spinner while fetching
+    // 2. Fetch from testItem.url if it targets a module anchor (#module-XXXX) or quiz page
+    const targetUrl = testItem.url || testItem.viewUrl;
+    if (!targetUrl || (!targetUrl.includes('#module-') && !targetUrl.includes('/mod/quiz/'))) {
+      renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
+      annModal.style.display = 'flex';
+      return;
+    }
+
+    // Show loading spinner while fetching
     if (modalAnnContent) {
       modalAnnContent.innerHTML = `
-        ${parsed ? buildTestMetaGridHtml(parsed) : ''}
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px;gap:10px;color:var(--text-secondary);">
           <div class="spinner" style="width:22px;height:22px;border-width:2.5px;"></div>
           <p style="font-size:11.5px;color:var(--text-muted);">Loading details from SPeCTRUM...</p>
@@ -14674,13 +14814,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     annModal.style.display = 'flex';
 
-    // 3. Fetch from testItem.url if it's a quiz or module page
-    const targetUrl = testItem.url || testItem.viewUrl;
-    if (!targetUrl || (targetUrl.includes('#') && !targetUrl.includes('/mod/quiz/'))) {
-      renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
-      return;
-    }
-
     try {
       const res = await fetchWithTimeout(targetUrl, { credentials: 'include' }, 12000);
       if (res.ok && !res.url.includes('/login/')) {
@@ -14688,16 +14821,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         const origin = 'https://spectrum.um.edu.my';
         const doc = new DOMParser().parseFromString(`<base href="${origin}/">${html}`, 'text/html');
 
-        const introEl = doc.querySelector('#intro, .quizinfo, [data-region="activity-information"], .generalbox, .box.py-3');
-        const contentHtml = introEl ? introEl.innerHTML : '';
-        const text = (introEl ? (introEl.innerText || introEl.textContent) : (doc.body.innerText || '')).trim();
+        let introEl = null;
+        if (targetUrl.includes('#module-')) {
+          const modAnchor = (targetUrl.match(/module-\d+/i) || [])[0];
+          if (modAnchor) {
+            const anchorTarget = doc.getElementById(modAnchor);
+            if (anchorTarget) {
+              introEl = anchorTarget.querySelector('.contentwithoutlink, .activity-description, .no-overflow') || anchorTarget;
+            }
+          }
+        }
 
-        parsed = parseStructuredTestDetails(text, testItem.title);
-        testItem.contentHtml = contentHtml;
-        testItem.contentText = text;
-        testItem.parsedExam = parsed;
+        if (!introEl && targetUrl.includes('/mod/quiz/')) {
+          introEl = doc.querySelector('#intro, .quizinfo, [data-region="activity-information"], .generalbox');
+        }
 
-        renderTestModalBody(contentHtml, text, parsed);
+        let contentHtml = '';
+        let text = '';
+        if (introEl) {
+          const clone = introEl.cloneNode(true);
+          clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
+          contentHtml = clone.innerHTML.trim();
+          text = (clone.innerText || clone.textContent || '').trim();
+        }
+
+        if (text && text.length > 15) {
+          parsed = parseStructuredTestDetails(text, cleanTitle);
+          testItem.contentHtml = contentHtml;
+          testItem.contentText = text;
+          testItem.parsedExam = parsed;
+          renderTestModalBody(contentHtml, text, parsed);
+        } else {
+          renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
+        }
       } else {
         renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
       }
@@ -14737,8 +14893,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // If already cached, display immediately
     if (ann.contentHtml && modalAnnContent) {
       const parsedTest = parseStructuredTestDetails(ann.contentHtml || ann.preview, ann.title);
-      const testGrid = buildTestMetaGridHtml(parsedTest);
-      modalAnnContent.innerHTML = `${testGrid}${ann.contentHtml}`;
+      renderTestModalBody(ann.contentHtml, ann.preview || '', parsedTest);
       annModal.style.display = 'flex';
       return;
     }
@@ -14862,8 +15017,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         ann.contentHtml = contentHtml;
         const parsedTest = parseStructuredTestDetails(contentHtml, ann.title);
-        const testGrid = buildTestMetaGridHtml(parsedTest);
-        if (modalAnnContent) modalAnnContent.innerHTML = `${testGrid}${contentHtml}`;
+        renderTestModalBody(contentHtml, '', parsedTest);
         debounceSaveCache();
       } else {
         if (modalAnnContent) {

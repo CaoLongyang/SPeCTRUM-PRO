@@ -938,13 +938,19 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
       }
 
       // Scan embedded test / exam notices in course labels / summary blocks (e.g. TEST 1 (25%))
-      const labelEls = doc.querySelectorAll('.activity.label, li.label, .modtype_label, div[data-activityname*="label"], .modtype_label .activity-item, li[data-for="cmitem"]');
+      const labelEls = doc.querySelectorAll('.activity.label, li.label, .modtype_label, div[data-activityname*="label"], .modtype_label .activity-item, li[data-for="cmitem"].modtype_label, li[data-for="cmitem"].label');
       for (const lbl of Array.from(labelEls)) {
-        const text = (lbl.innerText || lbl.textContent || '').trim();
-        if (!text) continue;
+        // Target content container to avoid Moodle bulk edit checkboxes, accessibility skip links, etc.
+        const contentEl = lbl.querySelector('.contentwithoutlink, .activity-description, .no-overflow') || lbl;
+        const clone = contentEl.cloneNode(true);
+        // Clean out accessibility text, screen reader skip links, bulk edit checkboxes
+        clone.querySelectorAll('.accesshide, .sr-only, input, label[for*="activity-select"], a[href*="#maincontent"], .activity-actions').forEach(el => el.remove());
+
+        const text = (clone.innerText || clone.textContent || '').trim();
+        if (!text || text.length < 15) continue;
         const examInfo = extractExamDetails('', text, now);
         if (examInfo && !examInfo.stale) {
-          const firstLine = text.split(/\r?\n/)[0].replace(/[:\-_]+$/, '').trim();
+          const firstLine = text.split(/\r?\n/)[0].replace(/^(?:Select activity|Bulk edit|Activity)\s+/i, '').replace(/[:\-_]+$/, '').trim();
           const lblTitle = firstLine.length > 5 && firstLine.length < 80 ? firstLine : 'Upcoming Test / Exam';
           const moduleAnchor = findCourseModuleAnchor(lbl, doc, lblTitle);
           const lblCleanId = lblTitle.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
@@ -971,7 +977,7 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             moduleAnchor: moduleAnchor || '',
             isNotice: true,
             isTestNotice: true,
-            contentHtml: lbl.innerHTML,
+            contentHtml: clone.innerHTML,
             contentText: text,
             parsedExam: parsedExam,
             dueDateStr: `${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim(),
@@ -1055,12 +1061,16 @@ function findCourseModuleAnchor(el, doc, title = '') {
 // Parses structured test, mid-sem, quiz, or exam metadata (date, time, venue, platform, topic, format, duration)
 function parseStructuredTestDetails(rawText = '', title = '') {
   if (!rawText && !title) return null;
-  const full = `${title || ''}\n${rawText || ''}`.trim();
+  let full = `${title || ''}\n${rawText || ''}`
+    .replace(/Skip to main content/gi, '')
+    .replace(/Select activity\s*/gi, '')
+    .replace(/Bulk action\s*/gi, '')
+    .trim();
   if (!full) return null;
 
   const lines = full.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const result = {
-    title: title || '',
+    title: (title || '').replace(/^(?:Select activity|Bulk edit|Activity)\s+/i, '').trim(),
     date: '',
     time: '',
     duration: '',
@@ -1109,10 +1119,11 @@ function parseStructuredTestDetails(rawText = '', title = '') {
 
   // 3. Fallbacks from sentence patterns
   if (!result.date) {
-    const m = full.match(/(?:held on|takes place on|taking place on|on|pada)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+    const m = full.match(/(?:held on|held|taking place on|takes place on|exam on|test on)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+              full.match(/(?:held on|held|taking place on|takes place on|exam on|test on)\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
               full.match(/\bopen on\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
-              full.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\s+20\d{2})?)/i);
-    if (m) result.date = m[1].trim();
+              full.match(/\b(open\s+on\s+[A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i);
+    if (m) result.date = (m[1] || '').replace(/^open\s+on\s+/i, '').trim();
   }
 
   if (!result.time) {
@@ -1138,7 +1149,7 @@ function parseStructuredTestDetails(rawText = '', title = '') {
   }
 
   if (!result.topic) {
-    const m = full.match(/\b((?:Week|Minggu|Chapter|Bab|Modules?)\s*[\d\s\-–—to,]+)/i);
+    const m = full.match(/\b(?:covers?|covering)\s+((?:Week|Minggu|Chapter|Bab)\s*[\d\s\-–—to,]+)/i);
     if (m) result.topic = m[1].trim();
   }
 
