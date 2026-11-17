@@ -959,6 +959,8 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             ? `${origin}/course/view.php?id=${courseId}#${moduleAnchor}`
             : `${origin}/course/view.php?id=${courseId}`;
 
+          const parsedExam = parseStructuredTestDetails(text, lblTitle);
+
           assignments.push({
             id: `label_exam_${courseId}_${uniqueId}`,
             courseId,
@@ -969,6 +971,9 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             moduleAnchor: moduleAnchor || '',
             isNotice: true,
             isTestNotice: true,
+            contentHtml: lbl.innerHTML,
+            contentText: text,
+            parsedExam: parsedExam,
             dueDateStr: `${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim(),
             dueDate: examInfo.parsedDate,
             statusText: 'Upcoming Test',
@@ -1045,6 +1050,100 @@ function findCourseModuleAnchor(el, doc, title = '') {
   if (parentSec && parentSec.id) return parentSec.id;
 
   return '';
+}
+
+// Parses structured test, mid-sem, quiz, or exam metadata (date, time, venue, platform, topic, format, duration)
+function parseStructuredTestDetails(rawText = '', title = '') {
+  if (!rawText && !title) return null;
+  const full = `${title || ''}\n${rawText || ''}`.trim();
+  if (!full) return null;
+
+  const lines = full.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const result = {
+    title: title || '',
+    date: '',
+    time: '',
+    duration: '',
+    venue: '',
+    platform: '',
+    format: '',
+    topic: '',
+    weightage: ''
+  };
+
+  // 1. Weightage
+  const wMatch = full.match(/\((\d{1,2}%)\)/) || full.match(/(?:weightage|pemberat|percentage|peratus)[:\s]+(\d{1,2}%)/i) || full.match(/\b(\d{1,2}%)\b/);
+  if (wMatch) result.weightage = wMatch[1];
+
+  // 2. Line-by-line structured scan
+  for (const line of lines) {
+    if (!result.date) {
+      const m = line.match(/^(?:date|tarikh|date of exam|date of test)[:\s]+([^\n\r]+)/i);
+      if (m) result.date = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+    if (!result.time) {
+      const m = line.match(/^(?:time open|time|masa buka|masa|waktu)[:\s]+([^\n\r]+)/i);
+      if (m) result.time = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+    if (!result.duration) {
+      const m = line.match(/^(?:duration|tempoh|time limit|masa menjawab)[:\s]+([^\n\r]+)/i);
+      if (m) result.duration = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+    if (!result.venue) {
+      const m = line.match(/^(?:venue|location|tempat|lokasi|bilik|dewan)[:\s]+([^\n\r]+)/i);
+      if (m) result.venue = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+    if (!result.platform) {
+      const m = line.match(/^(?:platform|saluran|portal)[:\s]+([^\n\r]+)/i);
+      if (m) result.platform = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+    if (!result.format) {
+      const m = line.match(/^(?:format|type|bentuk soalan|jenis soalan)[:\s]+([^\n\r]+)/i);
+      if (m) result.format = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+    if (!result.topic) {
+      const m = line.match(/^(?:topic|scope|syllabus|topik|skop|sukatan|coverage|bab)[:\s]+([^\n\r]+)/i);
+      if (m) result.topic = m[1].replace(/[:\-_]+$/, '').trim();
+    }
+  }
+
+  // 3. Fallbacks from sentence patterns
+  if (!result.date) {
+    const m = full.match(/(?:held on|takes place on|taking place on|on|pada)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+              full.match(/\bopen on\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
+              full.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\s+20\d{2})?)/i);
+    if (m) result.date = m[1].trim();
+  }
+
+  if (!result.time) {
+    const m = full.match(/(?:from|dari)\s+([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?\s*(?:until|to|hingga|[-–—])\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i) ||
+              full.match(/\b([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)\s*[-–—to]\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm))\b/i);
+    if (m) result.time = m[1].trim();
+  }
+
+  if (!result.duration) {
+    const m = full.match(/\b(\d+\s*(?:minutes?|mins?|hours?|jam|minit))\b/i);
+    if (m) result.duration = m[1].trim();
+  }
+
+  if (!result.venue && !result.platform) {
+    const m = full.match(/\b(Spectrum\s*Exam|SPeCTRUM|DK\s*\d+|Dewan\s+[^\n\r,]+|Lab\s*\d+|Makmal\s+[^\n\r,]+|Auditorium\s*[^\n\r,]*|Online)\b/i);
+    if (m) result.venue = m[1].trim();
+  }
+
+  if (!result.format) {
+    const m = full.match(/\b(\d+\s*(?:MCQs?|Multiple Choice Questions?|Soalan Objektif))\b/i) ||
+              full.match(/\b(Multiple Choice|MCQs?|Objective|Short Answer|Essay|Struktur|Esei)\b/i);
+    if (m) result.format = m[1].trim();
+  }
+
+  if (!result.topic) {
+    const m = full.match(/\b((?:Week|Minggu|Chapter|Bab|Modules?)\s*[\d\s\-–—to,]+)/i);
+    if (m) result.topic = m[1].trim();
+  }
+
+  const hasDetails = Boolean(result.date || result.time || result.duration || result.venue || result.platform || result.format || result.topic);
+  return hasDetails ? result : null;
 }
 
 // Clean date and time text: strip ordinal suffixes (26th -> 26), normalize dashes and a.m./p.m.

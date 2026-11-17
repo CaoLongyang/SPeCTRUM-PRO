@@ -153,6 +153,7 @@ const I18N = {
       submitLate: 'Submit Late →',
       view: 'View →',
       viewNotice: 'View Notice →',
+      details: 'Details →',
       submitted: 'Submitted ✓',
       noDeadline: 'No deadline',
       items: '{n} item{s}',
@@ -368,6 +369,7 @@ const I18N = {
       submitLate: 'Hantar Lewat →',
       view: 'Lihat →',
       viewNotice: 'Lihat Notis →',
+      details: 'Butiran →',
       submitted: 'Dihantar ✓',
       noDeadline: 'Tiada had masa',
       items: '{n} item',
@@ -583,6 +585,7 @@ const I18N = {
       submitLate: '补交 →',
       view: '查看 →',
       viewNotice: '查看通知 →',
+      details: '详情 →',
       submitted: '已提交 ✓',
       noDeadline: '无截止',
       items: '{n} 项',
@@ -4185,7 +4188,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       (assign.url && String(assign.url).includes('/course/view.php'))
     );
 
-    if (isNoticeLike && !isSubmitted) {
+    if (isTest) {
+      btnText = t('cards', 'details', 'Details →');
+      btnClass = 'btn-assign-normal btn-assign-details btn-test-details';
+    } else if (isNoticeLike && !isSubmitted) {
       btnText = t('cards', 'view', 'View →');
       btnClass = isOverdue ? 'btn-assign-overdue btn-assign-view' : 'btn-assign-normal btn-assign-view';
     }
@@ -4249,9 +4255,15 @@ document.addEventListener('DOMContentLoaded', async () => {
               ` : ''}
             </div>
             <div class="assign-footer-right">
-              <a href="${escapeHtml(vm.submitUrl)}" target="_blank" class="btn-assign-action ${vm.btnClass}" title="${isNoticeLike ? 'View details in SPeCTRUM' : 'Open assignment submission in SPeCTRUM'}">
-                ${escapeHtml(vm.btnText)}
-              </a>
+              ${isTest ? `
+                <button type="button" class="btn-assign-action btn-test-details ${vm.btnClass}" data-test-id="${escapeHtml(vm.rawId)}" title="View test details in SPeCTRUM Pro">
+                  ${escapeHtml(vm.btnText)}
+                </button>
+              ` : `
+                <a href="${escapeHtml(vm.submitUrl)}" target="_blank" class="btn-assign-action ${vm.btnClass}" title="${isNoticeLike ? 'View details in SPeCTRUM' : 'Open assignment submission in SPeCTRUM'}">
+                  ${escapeHtml(vm.btnText)}
+                </a>
+              `}
             </div>
           </div>
         </div>
@@ -4261,6 +4273,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Document-level delegation for assignment deletion and restoration
   document.addEventListener('click', async (e) => {
+    const btnTestDetails = e.target.closest('.btn-test-details');
+    if (btnTestDetails) {
+      e.preventDefault();
+      e.stopPropagation();
+      const testId = btnTestDetails.dataset.testId || btnTestDetails.closest('[data-assign-id]')?.dataset.assignId;
+      const item = findTestOrAssignmentById(testId, btnTestDetails.closest('.spectrum-card'));
+      if (item) {
+        openTestDetailsModal(item);
+      }
+      return;
+    }
+
+    const testCard = e.target.closest('.scoped-card-test, [data-activity-type="test"]');
+    if (testCard && !e.target.closest('.btn-delete-assignment, button, a')) {
+      e.preventDefault();
+      const testId = testCard.dataset.assignId || testCard.dataset.id;
+      const item = findTestOrAssignmentById(testId, testCard);
+      if (item) {
+        openTestDetailsModal(item);
+      }
+      return;
+    }
+
     const btnDel = e.target.closest('.btn-delete-assignment');
     if (btnDel) {
       e.preventDefault();
@@ -14441,6 +14476,236 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  function findTestOrAssignmentById(id, cardEl) {
+    if (!id && cardEl) {
+      id = cardEl.dataset.assignId || cardEl.dataset.id || cardEl.dataset.testId;
+    }
+    if (!id) return null;
+    const sId = String(id);
+    let found = assignmentsData.find(a => 
+      String(a.id) === sId ||
+      String(a.id).endsWith(`_${sId}`) ||
+      (a.url && a.url.includes(`id=${sId}`)) ||
+      (a.moduleAnchor && a.moduleAnchor === sId)
+    );
+    if (!found && cardEl) {
+      const cardTitle = cardEl.querySelector('.assign-title-text')?.textContent?.trim();
+      const cardCourse = cardEl.querySelector('.assign-header-left')?.textContent?.split('/')[0]?.trim();
+      if (cardTitle) {
+        found = assignmentsData.find(a => (a.title && a.title.includes(cardTitle)) || (cardTitle.includes(a.title || '---')));
+      }
+      if (!found && cardTitle) {
+        found = {
+          id: sId,
+          title: cardTitle,
+          courseCode: cardCourse || 'TEST',
+          url: cardEl.querySelector('a')?.href || 'https://spectrum.um.edu.my',
+          dueDateStr: cardEl.querySelector('.assign-timestamp')?.textContent?.trim() || '',
+          contentText: cardTitle
+        };
+      }
+    }
+    return found || null;
+  }
+
+  function parseStructuredTestDetails(rawText = '', title = '') {
+    if (!rawText && !title) return null;
+    const full = `${title || ''}\n${rawText || ''}`.trim();
+    if (!full) return null;
+
+    const lines = full.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const result = {
+      title: title || '',
+      date: '',
+      time: '',
+      duration: '',
+      venue: '',
+      platform: '',
+      format: '',
+      topic: '',
+      weightage: ''
+    };
+
+    // 1. Weightage
+    const wMatch = full.match(/\((\d{1,2}%)\)/) || full.match(/(?:weightage|pemberat|percentage|peratus)[:\s]+(\d{1,2}%)/i) || full.match(/\b(\d{1,2}%)\b/);
+    if (wMatch) result.weightage = wMatch[1];
+
+    // 2. Line-by-line structured scan
+    for (const line of lines) {
+      if (!result.date) {
+        const m = line.match(/^(?:date|tarikh|date of exam|date of test)[:\s]+([^\n\r]+)/i);
+        if (m) result.date = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.time) {
+        const m = line.match(/^(?:time open|time|masa buka|masa|waktu)[:\s]+([^\n\r]+)/i);
+        if (m) result.time = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.duration) {
+        const m = line.match(/^(?:duration|tempoh|time limit|masa menjawab)[:\s]+([^\n\r]+)/i);
+        if (m) result.duration = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.venue) {
+        const m = line.match(/^(?:venue|location|tempat|lokasi|bilik|dewan)[:\s]+([^\n\r]+)/i);
+        if (m) result.venue = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.platform) {
+        const m = line.match(/^(?:platform|saluran|portal)[:\s]+([^\n\r]+)/i);
+        if (m) result.platform = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.format) {
+        const m = line.match(/^(?:format|type|bentuk soalan|jenis soalan)[:\s]+([^\n\r]+)/i);
+        if (m) result.format = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+      if (!result.topic) {
+        const m = line.match(/^(?:topic|scope|syllabus|topik|skop|sukatan|coverage|bab)[:\s]+([^\n\r]+)/i);
+        if (m) result.topic = m[1].replace(/[:\-_]+$/, '').trim();
+      }
+    }
+
+    // 3. Fallbacks from sentence patterns
+    if (!result.date) {
+      const m = full.match(/(?:held on|takes place on|taking place on|on|pada)\s+([A-Za-z]+,?\s*\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s*20\d{2})/i) ||
+                full.match(/\bopen on\s+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i) ||
+                full.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\s+20\d{2})?)/i);
+      if (m) result.date = m[1].trim();
+    }
+
+    if (!result.time) {
+      const m = full.match(/(?:from|dari)\s+([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?\s*(?:until|to|hingga|[-–—])\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i) ||
+                full.match(/\b([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)\s*[-–—to]\s*[0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm))\b/i);
+      if (m) result.time = m[1].trim();
+    }
+
+    if (!result.duration) {
+      const m = full.match(/\b(\d+\s*(?:minutes?|mins?|hours?|jam|minit))\b/i);
+      if (m) result.duration = m[1].trim();
+    }
+
+    if (!result.venue && !result.platform) {
+      const m = full.match(/\b(Spectrum\s*Exam|SPeCTRUM|DK\s*\d+|Dewan\s+[^\n\r,]+|Lab\s*\d+|Makmal\s+[^\n\r,]+|Auditorium\s*[^\n\r,]*|Online)\b/i);
+      if (m) result.venue = m[1].trim();
+    }
+
+    if (!result.format) {
+      const m = full.match(/\b(\d+\s*(?:MCQs?|Multiple Choice Questions?|Soalan Objektif))\b/i) ||
+                full.match(/\b(Multiple Choice|MCQs?|Objective|Short Answer|Essay|Struktur|Esei)\b/i);
+      if (m) result.format = m[1].trim();
+    }
+
+    if (!result.topic) {
+      const m = full.match(/\b((?:Week|Minggu|Chapter|Bab|Modules?)\s*[\d\s\-–—to,]+)/i);
+      if (m) result.topic = m[1].trim();
+    }
+
+    const hasDetails = Boolean(result.date || result.time || result.duration || result.venue || result.platform || result.format || result.topic);
+    return hasDetails ? result : null;
+  }
+
+  function buildTestMetaGridHtml(parsed) {
+    if (!parsed) return '';
+    const chips = [];
+    if (parsed.date) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📅 DATE</span><span class="test-meta-val">${escapeHtml(parsed.date)}</span></div>`);
+    if (parsed.time) chips.push(`<div class="test-meta-card"><span class="test-meta-label">⏰ TIME</span><span class="test-meta-val">${escapeHtml(parsed.time)}</span></div>`);
+    if (parsed.duration) chips.push(`<div class="test-meta-card"><span class="test-meta-label">⏳ DURATION</span><span class="test-meta-val">${escapeHtml(parsed.duration)}</span></div>`);
+    if (parsed.venue || parsed.platform) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📍 VENUE / PLATFORM</span><span class="test-meta-val">${escapeHtml(parsed.venue || parsed.platform)}</span></div>`);
+    if (parsed.format) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📝 FORMAT</span><span class="test-meta-val">${escapeHtml(parsed.format)}</span></div>`);
+    if (parsed.topic) chips.push(`<div class="test-meta-card"><span class="test-meta-label">📚 TOPIC</span><span class="test-meta-val">${escapeHtml(parsed.topic)}</span></div>`);
+    if (parsed.weightage) chips.push(`<div class="test-meta-card"><span class="test-meta-label">⚖️ WEIGHTAGE</span><span class="test-meta-val">${escapeHtml(parsed.weightage)}</span></div>`);
+
+    if (chips.length === 0) return '';
+    return `<div class="test-meta-grid">${chips.join('')}</div>`;
+  }
+
+  function renderTestModalBody(contentHtml, rawText, parsed) {
+    if (!modalAnnContent) return;
+    const gridHtml = buildTestMetaGridHtml(parsed);
+    let bodyHtml = '';
+    if (contentHtml) {
+      bodyHtml = `<div class="test-content-html">${contentHtml}</div>`;
+    } else if (rawText) {
+      bodyHtml = `<div class="test-content-body">${escapeHtml(rawText)}</div>`;
+    } else {
+      bodyHtml = `<p style="color:var(--text-muted);font-size:12px;">No written notice attached to this test item.</p>`;
+    }
+
+    modalAnnContent.innerHTML = `
+      <div class="test-details-container">
+        ${gridHtml}
+        ${bodyHtml}
+      </div>
+    `;
+  }
+
+  async function openTestDetailsModal(testItem) {
+    if (!testItem || !annModal) return;
+
+    const courseCode = testItem.courseCode || cleanSingleCourseCode(testItem.courseName) || 'TEST';
+    if (modalAnnCourseBadge) modalAnnCourseBadge.textContent = courseCode;
+    if (modalAnnDate) modalAnnDate.textContent = testItem.dueDateStr || '';
+    if (modalAnnTitle) modalAnnTitle.textContent = testItem.title || 'Test Details';
+    if (modalAnnAuthor) modalAnnAuthor.textContent = (currentLang === 'zh') ? '📝 考试 / 测试详情' : ((currentLang === 'bm') ? '📝 Butiran Ujian / Peperiksaan' : '📝 Test / Exam Details');
+
+    const viewSpectrumText = (currentLang === 'zh') ? '在 SPeCTRUM 查看 ↗' : ((currentLang === 'bm') ? 'Lihat di SPeCTRUM ↗' : 'View on SPeCTRUM ↗');
+    if (modalAnnLink) {
+      modalAnnLink.href = testItem.url || testItem.viewUrl || '#';
+      modalAnnLink.textContent = viewSpectrumText;
+      modalAnnLink.style.display = 'inline-flex';
+    }
+
+    // 1. If we already have contentHtml or parsedExam cached
+    let rawText = testItem.contentText || testItem.description || '';
+    let parsed = testItem.parsedExam || parseStructuredTestDetails(rawText || testItem.title, testItem.title);
+
+    if (testItem.contentHtml || (rawText && rawText.length > 25)) {
+      renderTestModalBody(testItem.contentHtml, rawText, parsed);
+      annModal.style.display = 'flex';
+      return;
+    }
+
+    // 2. If no content cached yet, show loading spinner while fetching
+    if (modalAnnContent) {
+      modalAnnContent.innerHTML = `
+        ${parsed ? buildTestMetaGridHtml(parsed) : ''}
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px;gap:10px;color:var(--text-secondary);">
+          <div class="spinner" style="width:22px;height:22px;border-width:2.5px;"></div>
+          <p style="font-size:11.5px;color:var(--text-muted);">Loading details from SPeCTRUM...</p>
+        </div>
+      `;
+    }
+    annModal.style.display = 'flex';
+
+    // 3. Fetch from testItem.url if it's a quiz or module page
+    const targetUrl = testItem.url || testItem.viewUrl;
+    if (!targetUrl || (targetUrl.includes('#') && !targetUrl.includes('/mod/quiz/'))) {
+      renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
+      return;
+    }
+
+    try {
+      const res = await fetchWithTimeout(targetUrl, { credentials: 'include' }, 12000);
+      if (res.ok && !res.url.includes('/login/')) {
+        const html = await res.text();
+        const origin = 'https://spectrum.um.edu.my';
+        const doc = new DOMParser().parseFromString(`<base href="${origin}/">${html}`, 'text/html');
+
+        const introEl = doc.querySelector('#intro, .quizinfo, [data-region="activity-information"], .generalbox, .box.py-3');
+        const contentHtml = introEl ? introEl.innerHTML : '';
+        const text = (introEl ? (introEl.innerText || introEl.textContent) : (doc.body.innerText || '')).trim();
+
+        parsed = parseStructuredTestDetails(text, testItem.title);
+        testItem.contentHtml = contentHtml;
+        testItem.contentText = text;
+        testItem.parsedExam = parsed;
+
+        renderTestModalBody(contentHtml, text, parsed);
+      } else {
+        renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
+      }
+    } catch (e) {
+      renderTestModalBody('', rawText || `Scheduled Date: ${testItem.dueDateStr || 'Refer to SPeCTRUM'}`, parsed);
+    }
+  }
+
   async function openAnnouncementModal(ann) {
     if (!annModal) return;
     if (modalAnnCourseBadge) modalAnnCourseBadge.textContent = ann.courseCode || ann.courseName || 'NOTICE';
@@ -14471,7 +14736,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // If already cached, display immediately
     if (ann.contentHtml && modalAnnContent) {
-      modalAnnContent.innerHTML = ann.contentHtml;
+      const parsedTest = parseStructuredTestDetails(ann.contentHtml || ann.preview, ann.title);
+      const testGrid = buildTestMetaGridHtml(parsedTest);
+      modalAnnContent.innerHTML = `${testGrid}${ann.contentHtml}`;
       annModal.style.display = 'flex';
       return;
     }
@@ -14594,7 +14861,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         ann.contentHtml = contentHtml;
-        if (modalAnnContent) modalAnnContent.innerHTML = contentHtml;
+        const parsedTest = parseStructuredTestDetails(contentHtml, ann.title);
+        const testGrid = buildTestMetaGridHtml(parsedTest);
+        if (modalAnnContent) modalAnnContent.innerHTML = `${testGrid}${contentHtml}`;
         debounceSaveCache();
       } else {
         if (modalAnnContent) {

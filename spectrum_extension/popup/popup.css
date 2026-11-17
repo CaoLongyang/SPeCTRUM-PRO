@@ -5345,6 +5345,77 @@ body.timeline-dragging-active * {
   background: var(--bg-canvas);
 }
 
+/* Test & Exam Details Modal Layout & Meta Grid */
+.test-details-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.test-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-hairline, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-sm, 6px);
+}
+
+.test-meta-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 10px;
+  background: var(--bg-surface, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-hairline, rgba(255, 255, 255, 0.06));
+  border-radius: 4px;
+}
+
+.test-meta-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted, #71717a);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.test-meta-val {
+  font-family: 'Hanken Grotesk', -apple-system, sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary, #f4f4f5);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.test-content-html, .test-content-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary, #e4e4e7);
+  word-break: break-word;
+}
+
+.test-content-body {
+  white-space: pre-wrap;
+}
+
+.btn-assign-details {
+  cursor: pointer;
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-hairline, rgba(255, 255, 255, 0.15));
+  color: var(--text-primary, #fff);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-assign-details:hover {
+  background: var(--accent-primary, #3b82f6);
+  color: #fff;
+  border-color: var(--accent-primary, #3b82f6);
+}
+
 /* Form Controls */
 input[type="text"], input[type="password"], input[type="date"], select {
   font-family: inherit;

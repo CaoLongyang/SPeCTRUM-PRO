@@ -418,16 +418,26 @@
     const targetId = hash.slice(1);
     const numOnly = targetId.replace(/^(?:module|section)-/, '');
 
+    // 0. Trigger Moodle's native course index link in the left drawer if present
+    try {
+      const courseIndexLink = document.querySelector(`a.courseindex-link[href*="module-${numOnly}"], a.courseindex-link[data-id="${numOnly}"], a.courseindex-link[href*="#${targetId}"]`);
+      if (courseIndexLink && !courseIndexLink.dataset.proTriggered) {
+        courseIndexLink.dataset.proTriggered = 'true';
+        courseIndexLink.click();
+      }
+    } catch (e) {}
+
     function attemptScrollAndHighlight(attempt = 0) {
       const el = document.getElementById(targetId) || 
                  document.querySelector(`[data-id="${numOnly}"]`) ||
                  document.querySelector(`[data-cmid="${numOnly}"]`) ||
                  document.querySelector(`li#${targetId}`) ||
                  document.querySelector(`div#${targetId}`) ||
+                 document.querySelector(`.activity[id*="${numOnly}"]`) ||
                  document.querySelector(`a[name="${targetId}"]`);
 
       if (!el) {
-        if (attempt < 12) {
+        if (attempt < 16) {
           setTimeout(() => attemptScrollAndHighlight(attempt + 1), 250);
         }
         return;
@@ -438,6 +448,9 @@
       while (parent && parent !== document.body) {
         if (parent.classList && parent.classList.contains('collapse') && !parent.classList.contains('show')) {
           parent.classList.add('show');
+        }
+        if (parent.classList && parent.classList.contains('collapsed')) {
+          parent.classList.remove('collapsed');
         }
         const toggler = parent.querySelector?.('[data-toggle="collapse"][aria-expanded="false"], [data-bs-toggle="collapse"][aria-expanded="false"]');
         if (toggler) {
