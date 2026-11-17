@@ -938,7 +938,7 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
       }
 
       // Scan embedded test / exam notices in course labels / summary blocks (e.g. TEST 1 (25%))
-      const labelEls = doc.querySelectorAll('.activity.label, li.label, .modtype_label, div[data-activityname*="label"]');
+      const labelEls = doc.querySelectorAll('.activity.label, li.label, .modtype_label, div[data-activityname*="label"], .modtype_label .activity-item, li[data-for="cmitem"]');
       for (const lbl of Array.from(labelEls)) {
         const text = (lbl.innerText || lbl.textContent || '').trim();
         if (!text) continue;
@@ -946,13 +946,18 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
         if (examInfo && !examInfo.stale) {
           const firstLine = text.split(/\r?\n/)[0].replace(/[:\-_]+$/, '').trim();
           const lblTitle = firstLine.length > 5 && firstLine.length < 80 ? firstLine : 'Upcoming Test / Exam';
+          const moduleAnchor = findCourseModuleAnchor(lbl, doc, lblTitle);
           const lblCleanId = lblTitle.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
-          const uniqueId = `lbl_${lbl.getAttribute('id') || lblCleanId}`;
+          const uniqueId = `lbl_${moduleAnchor || lbl.getAttribute('id') || lblCleanId}`;
           if (seenAssignIds.has(uniqueId)) continue;
           seenAssignIds.add(uniqueId);
 
           const parsedMeta = calculateAssignmentTiming(`${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim(), 'Upcoming Test', now, courseName);
           if (isPastSemesterStale(parsedMeta.dueDate, lblTitle, now, courseName)) continue;
+
+          const itemUrl = moduleAnchor 
+            ? `${origin}/course/view.php?id=${courseId}#${moduleAnchor}`
+            : `${origin}/course/view.php?id=${courseId}`;
 
           assignments.push({
             id: `label_exam_${courseId}_${uniqueId}`,
@@ -960,7 +965,10 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             courseCode,
             courseName,
             title: lblTitle,
-            url: `${origin}/course/view.php?id=${courseId}`,
+            url: itemUrl,
+            moduleAnchor: moduleAnchor || '',
+            isNotice: true,
+            isTestNotice: true,
             dueDateStr: `${examInfo.extractedDateStr} ${examInfo.extractedTimeStr}`.trim(),
             dueDate: examInfo.parsedDate,
             statusText: 'Upcoming Test',
@@ -971,7 +979,7 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
             badgeClass: 'badge-due-warning',
             badgeLabel: '📝 Test'
           });
-          logDiag('Sync:Assign', `[${courseCode || courseId}] 🎯 Discovered embedded test notice: "${lblTitle}" on ${examInfo.extractedDateStr}`);
+          logDiag('Sync:Assign', `[${courseCode || courseId}] 🎯 Discovered embedded test notice: "${lblTitle}" on ${examInfo.extractedDateStr} -> ${itemUrl}`);
         }
       }
     }
@@ -980,6 +988,63 @@ async function fetchCourseAssignments(courseId, courseCode, courseName, minTimes
   }
 
   return assignments;
+}
+
+// Finds the Moodle module anchor (#module-XXXXX) for a course element or label
+function findCourseModuleAnchor(el, doc, title = '') {
+  if (!el) return '';
+  // 1. Direct ID on the element
+  if (el.id && /^module-\d+/i.test(el.id)) return el.id;
+
+  // 2. Closest parent module container (Moodle uses <li class="activity label" id="module-1149921">)
+  const parentMod = el.closest ? el.closest('[id^="module-"]') : null;
+  if (parentMod && parentMod.id) return parentMod.id;
+
+  // 3. data-id or data-cmid on element or its closest activity container
+  const dataId = (el.getAttribute && el.getAttribute('data-id')) || 
+                 (el.closest && el.closest('[data-id]')?.getAttribute('data-id'));
+  if (dataId && /^\d+$/.test(dataId)) return `module-${dataId}`;
+
+  const cmId = (el.getAttribute && el.getAttribute('data-cmid')) || 
+               (el.closest && el.closest('[data-cmid]')?.getAttribute('data-cmid'));
+  if (cmId && /^\d+$/.test(cmId)) return `module-${cmId}`;
+
+  // 4. Child or internal elements with id/name/href matching module-XXXX
+  if (el.querySelector) {
+    const internalEl = el.querySelector('[id^="module-"], a[href*="#module-"], a[name^="module-"]');
+    if (internalEl) {
+      if (internalEl.id && /^module-\d+/i.test(internalEl.id)) return internalEl.id;
+      const nameAttr = internalEl.getAttribute('name');
+      if (nameAttr && /^module-\d+/i.test(nameAttr)) return nameAttr;
+      const hrefAttr = internalEl.getAttribute('href') || '';
+      const m = hrefAttr.match(/#(module-\d+)/i);
+      if (m) return m[1];
+    }
+  }
+
+  // 5. Match against Moodle 4 course index links in the sidebar
+  if (doc && title && doc.querySelectorAll) {
+    const cleanT = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanT.length >= 4) {
+      const indexLinks = doc.querySelectorAll('.courseindex-link, [data-for="cm_name"], a[href*="#module-"]');
+      for (const link of Array.from(indexLinks)) {
+        const linkText = (link.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (linkText && (linkText.includes(cleanT) || cleanT.includes(linkText))) {
+          const href = link.getAttribute('href') || '';
+          const m = href.match(/#(module-\d+)/i);
+          if (m) return m[1];
+          const lDataId = link.getAttribute('data-id') || (link.closest && link.closest('[data-id]')?.getAttribute('data-id'));
+          if (lDataId) return `module-${lDataId}`;
+        }
+      }
+    }
+  }
+
+  // 6. Fallback: closest section container
+  const parentSec = el.closest ? el.closest('[id^="section-"]') : null;
+  if (parentSec && parentSec.id) return parentSec.id;
+
+  return '';
 }
 
 // Clean date and time text: strip ordinal suffixes (26th -> 26), normalize dashes and a.m./p.m.

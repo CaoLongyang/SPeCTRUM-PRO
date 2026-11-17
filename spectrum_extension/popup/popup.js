@@ -151,6 +151,8 @@ const I18N = {
       overdueToday: 'OVERDUE (TODAY)',
       submit: 'Submit →',
       submitLate: 'Submit Late →',
+      view: 'View →',
+      viewNotice: 'View Notice →',
       submitted: 'Submitted ✓',
       noDeadline: 'No deadline',
       items: '{n} item{s}',
@@ -358,6 +360,8 @@ const I18N = {
       overdueToday: 'Lewat Hari Ini',
       submit: 'Hantar →',
       submitLate: 'Hantar Lewat →',
+      view: 'Lihat →',
+      viewNotice: 'Lihat Notis →',
       submitted: 'Dihantar ✓',
       noDeadline: 'Tiada had masa',
       items: '{n} item',
@@ -565,6 +569,8 @@ const I18N = {
       overdueToday: '今日逾期',
       submit: '提交 →',
       submitLate: '补交 →',
+      view: '查看 →',
+      viewNotice: '查看通知 →',
       submitted: '已提交 ✓',
       noDeadline: '无截止',
       items: '{n} 项',
@@ -4137,6 +4143,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     else if (isOverdue) stateClass = 'is-overdue';
 
     const isTest = (typeof isTestActivity === 'function') ? isTestActivity(assign) : false;
+    const isNoticeLike = Boolean(
+      assign.isNotice || 
+      assign.isTestNotice || 
+      String(assign.id || '').startsWith('label_exam_') ||
+      assign.statusText === 'Upcoming Test' ||
+      (assign.url && String(assign.url).includes('/course/view.php'))
+    );
+
+    if (isNoticeLike && !isSubmitted) {
+      btnText = t('cards', 'view', 'View →');
+      btnClass = isOverdue ? 'btn-assign-overdue btn-assign-view' : 'btn-assign-normal btn-assign-view';
+    }
 
     return {
       rawId,
@@ -4152,12 +4170,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnClass,
       btnText,
       submitUrl,
-      isTest
+      isTest,
+      isNoticeLike
     };
   }
 
   function renderUnifiedAssignmentCardHtml(vm) {
     const isTest = vm && vm.isTest;
+    const isNoticeLike = vm && vm.isNoticeLike;
     const cardScopeClass = isTest ? 'scoped-card-test' : 'scoped-card-assignment';
     const cardTypeClass = isTest ? 'card-test' : 'card-assignment assignment-card';
     const iconBoxClass = isTest ? 'icon-box-test' : 'icon-box-assignment';
@@ -4195,7 +4215,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               ` : ''}
             </div>
             <div class="assign-footer-right">
-              <a href="${escapeHtml(vm.submitUrl)}" target="_blank" class="btn-assign-action ${vm.btnClass}" title="Open assignment submission in SPeCTRUM">
+              <a href="${escapeHtml(vm.submitUrl)}" target="_blank" class="btn-assign-action ${vm.btnClass}" title="${isNoticeLike ? 'View details in SPeCTRUM' : 'Open assignment submission in SPeCTRUM'}">
                 ${escapeHtml(vm.btnText)}
               </a>
             </div>

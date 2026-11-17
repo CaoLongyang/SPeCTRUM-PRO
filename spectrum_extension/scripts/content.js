@@ -410,14 +410,79 @@
     }
   }
 
+  // Auto-scroll and highlight module when URL has #module-XXXXX or #section-XXXXX
+  function handleModuleHashRedirect() {
+    const hash = window.location.hash;
+    if (!hash || !/^#(?:module|section)-\d+$/i.test(hash)) return;
+
+    const targetId = hash.slice(1);
+    const numOnly = targetId.replace(/^(?:module|section)-/, '');
+
+    function attemptScrollAndHighlight(attempt = 0) {
+      const el = document.getElementById(targetId) || 
+                 document.querySelector(`[data-id="${numOnly}"]`) ||
+                 document.querySelector(`[data-cmid="${numOnly}"]`) ||
+                 document.querySelector(`li#${targetId}`) ||
+                 document.querySelector(`div#${targetId}`) ||
+                 document.querySelector(`a[name="${targetId}"]`);
+
+      if (!el) {
+        if (attempt < 12) {
+          setTimeout(() => attemptScrollAndHighlight(attempt + 1), 250);
+        }
+        return;
+      }
+
+      // 1. Expand any collapsed parent section or accordion in Moodle
+      let parent = el.parentElement;
+      while (parent && parent !== document.body) {
+        if (parent.classList && parent.classList.contains('collapse') && !parent.classList.contains('show')) {
+          parent.classList.add('show');
+        }
+        const toggler = parent.querySelector?.('[data-toggle="collapse"][aria-expanded="false"], [data-bs-toggle="collapse"][aria-expanded="false"]');
+        if (toggler) {
+          toggler.setAttribute('aria-expanded', 'true');
+        }
+        if (parent.hasAttribute?.('aria-expanded') && parent.getAttribute('aria-expanded') === 'false') {
+          parent.setAttribute('aria-expanded', 'true');
+        }
+        parent = parent.parentElement;
+      }
+
+      // 2. Smoothly scroll into view
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) {
+        el.scrollIntoView();
+      }
+
+      // 3. Highlight with a sleek subtle glow/pulse animation
+      el.style.transition = 'box-shadow 0.4s ease, outline 0.4s ease';
+      el.style.outline = '2px solid #3b82f6';
+      el.style.boxShadow = '0 0 18px rgba(59, 130, 246, 0.45)';
+      el.style.borderRadius = '8px';
+
+      setTimeout(() => {
+        el.style.outline = 'transparent';
+        el.style.boxShadow = 'none';
+      }, 3500);
+    }
+
+    attemptScrollAndHighlight();
+  }
+
   // Run when DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       injectFloatingButton();
       handleAttendancePage();
+      handleModuleHashRedirect();
     });
   } else {
     injectFloatingButton();
     handleAttendancePage();
+    handleModuleHashRedirect();
   }
+
+  window.addEventListener('hashchange', handleModuleHashRedirect);
 })();
